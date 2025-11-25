@@ -1,32 +1,47 @@
-import { showScreen } from "./ui.js";
+const TEACHER_KEY = "1";
 
-const TEACHER_KEY = "TEACHER-ACCESS-2025";
+// =========================================================
+// 1. РОБОТА З БАЗОЮ ДАНИХ (LocalStorage)
+// =========================================================
 
-// ----------------------
-// База даних (LocalStorage)
-// ----------------------
+// Допоміжна функція: завжди бере СВІЖИЙ список користувачів
+function getAllUsers() {
+    try {
+        return JSON.parse(localStorage.getItem("users") || "[]");
+    } catch (e) {
+        console.error("Помилка читання бази користувачів:", e);
+        return [];
+    }
+}
+
 export const db = {
-    users: JSON.parse(localStorage.getItem("users") || "[]"),
-
-    save() {
-        localStorage.setItem("users", JSON.stringify(this.users));
+    // Зберігає весь масив користувачів у LocalStorage
+    save(users) {
+        localStorage.setItem("users", JSON.stringify(users));
     },
 
+    // Додає нового користувача
     addUser(user) {
+        const users = getAllUsers(); // 1. Беремо актуальний список
         user.id = user.id || Date.now();
-        this.users.push(user);
-        this.save();
+        users.push(user);            // 2. Додаємо
+        this.save(users);            // 3. Зберігаємо
     },
 
+    // Шукає користувача для входу
     findUser(email, pass) {
-        return this.users.find(u => u.email === email && u.pass === pass);
+        const users = getAllUsers(); // ВАЖЛИВО: читаємо свіжі дані перед кожним входом!
+        return users.find(u => u.email === email && u.pass === pass);
     },
 
+    // Перевіряє, чи існує email
     emailExists(email) {
-        return this.users.some(u => u.email === email);
+        const users = getAllUsers();
+        return users.some(u => u.email === email);
     }
 };
 
+// Отримує поточного активного користувача (із сесії)
 export function getCurrentUser() {
     try {
         const user = localStorage.getItem("currentUser");
@@ -37,9 +52,9 @@ export function getCurrentUser() {
     }
 }
 
-// ----------------------
-// UI допоміжні функції (Очищення/Встановлення помилок)
-// ----------------------
+// =========================================================
+// 2. UI HELPERS (Обробка помилок у формах)
+// =========================================================
 
 function setError(inputEl, message) {
     if (!inputEl) return;
@@ -65,17 +80,19 @@ function clearError(inputEl) {
 }
 
 function clearAllErrors(formId) {
-    document.querySelectorAll(`#${formId} .input-error`).forEach(el => el.classList.remove("input-error"));
-    document.querySelectorAll(`#${formId} .error-msg`).forEach(el => el.remove());
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.querySelectorAll(".input-error").forEach(el => el.classList.remove("input-error"));
+    form.querySelectorAll(".error-msg").forEach(el => el.remove());
 }
 
-// ----------------------
-// Основна логіка Аутентифікації
-// ----------------------
+// =========================================================
+// 3. ОСНОВНА ЛОГІКА АУТЕНТИФІКАЦІЇ
+// =========================================================
 
 export function initAuth(onLogin) {
 
-    // Елементи реєстрації
+    // --- Елементи Реєстрації ---
     const reg_name = document.getElementById("reg-name");
     const reg_email = document.getElementById("reg-email");
     const reg_pass = document.getElementById("reg-pass");
@@ -84,28 +101,29 @@ export function initAuth(onLogin) {
     const regSubmitBtn = document.getElementById("register-submit");
     const regForm = document.getElementById("register-form");
     
-    // Елементи входу
+    // --- Елементи Входу ---
     const login_email = document.getElementById("login-email");
     const login_pass = document.getElementById("login-pass");
     const loginSubmitBtn = document.getElementById("login-submit");
     const loginForm = document.getElementById("login-form");
 
-    // Інші елементи
+    // --- Інше ---
     const successDiv = document.getElementById("register-success");
     const regFormContent = document.getElementById("register-form-content");
 
     // ------------------------------------
-    // Логіка реєстрації
+    // Логіка Кнопки "Зареєструватися"
     // ------------------------------------
     if (regSubmitBtn) {
         regSubmitBtn.addEventListener('click', () => {
             if (!regForm) return;
 
-            // Використовуємо ID форми для очищення помилок
-            clearAllErrors(regForm.id); 
+            // Скидаємо помилки
+            clearAllErrors("register-form");
 
+            // Перевірка наявності елементів
             if (!reg_name || !reg_email || !reg_pass || !teacherKeyInput || !reg_class) {
-                console.error("Auth Error: Не знайдено всі елементи реєстраційної форми.");
+                console.error("Auth Error: Не знайдено поля форми реєстрації.");
                 return;
             }
 
@@ -115,14 +133,12 @@ export function initAuth(onLogin) {
 
             let valid = true;
 
-            // Визначаємо роль на основі видимості поля вчителя
+            // Визначаємо роль: якщо поле ключа видиме - це вчитель
             const isTeacherView = !document.getElementById("register-teacher-key")?.classList.contains("hidden");
             const role = isTeacherView ? "teacher" : "student";
             let className = null;
-            
-            console.log(`Auth: Спроба реєстрації як ${role}`);
 
-
+            // Валідація
             if (name.length < 2) {
                 setError(reg_name, "Імʼя повинно містити мінімум 2 символи.");
                 valid = false;
@@ -147,9 +163,7 @@ export function initAuth(onLogin) {
                     setError(teacherKeyInput, "Невірний код доступу викладача!");
                     valid = false;
                 }
-            }
-
-            if (role === "student") {
+            } else {
                 className = reg_class.value;
                 if (!className) {
                     setError(reg_class, "Оберіть ваш клас.");
@@ -159,6 +173,7 @@ export function initAuth(onLogin) {
 
             if (!valid) return;
 
+            // Створення об'єкта нового користувача
             const newUser = {
                 id: Date.now(),
                 name,
@@ -167,62 +182,58 @@ export function initAuth(onLogin) {
                 role,
                 className,
                 profile: {
-                    gold: 0,
-                    exp: 0,
-                    achievements: []
+                    gold: 0, // Стартове золото 0 (бонус нарахується в studentPanel.js)
+                    inventory: [],
+                    achievements: [],
+                    welcomeBonusReceived: false // Прапорець для логіки бонусу
                 }
             };
 
             db.addUser(newUser);
-            console.log(`Auth: Успішна реєстрація нового користувача: ${newUser.email}`);
+            console.log(`Auth: Успішна реєстрація: ${newUser.email}`);
 
-            // Показуємо повідомлення про успіх
+            // Успіх
             regFormContent?.classList.add("hidden");
             successDiv?.classList.remove("hidden");
 
-            // Очищаємо поля форми
+            // Очистка полів
             reg_name.value = "";
             reg_email.value = "";
             reg_pass.value = "";
             teacherKeyInput.value = "";
         });
-    } else {
-         console.error("Auth Error: Кнопка 'register-submit' не знайдена.");
     }
 
-    // Перехід на логін після успішної реєстрації
+    // Кнопка "Перейти до входу" після реєстрації
     document.getElementById("btn-go-to-login")?.addEventListener('click', () => {
         regFormContent?.classList.remove("hidden");
         successDiv?.classList.add("hidden");
-        showScreen("screen-login");
+        // Це спрацює, якщо router.js слухає клік на цю кнопку, 
+        // але для надійності можна викликати клік на "Вхід" в меню
+        document.getElementById("btn-login")?.click(); 
     });
 
-
     // ------------------------------------
-    // Логіка входу
+    // Логіка Кнопки "Увійти"
     // ------------------------------------
     if (loginSubmitBtn) {
         loginSubmitBtn.addEventListener('click', () => {
             if (!loginForm) return;
 
-            // Використовуємо ID форми для очищення помилок
-            clearAllErrors(loginForm.id);
+            clearAllErrors("login-form");
             
-            if (!login_email || !login_pass) {
-                 console.error("Auth Error: Не знайдено всі елементи форми входу.");
-                 return;
-            }
+            if (!login_email || !login_pass) return;
 
             const email = login_email.value.trim();
             const pass = login_pass.value.trim();
 
             let valid = true;
-
             if (!email) { setError(login_email, "Введіть email."); valid = false; }
             if (!pass) { setError(login_pass, "Введіть пароль."); valid = false; }
 
             if (!valid) return;
 
+            // ТУТ ГОЛОВНА ЗМІНА: findUser тепер читає найсвіжіші дані з localStorage
             const user = db.findUser(email, pass);
 
             if (!user) {
@@ -231,16 +242,16 @@ export function initAuth(onLogin) {
                 return;
             }
 
+            // Зберігаємо свіжого користувача в сесію
             localStorage.setItem("currentUser", JSON.stringify(user));
-            console.log(`Auth: Успішний вхід користувача: ${user.email} (${user.role})`);
+            console.log(`Auth: Успішний вхід: ${user.email}`);
 
-            // Очищаємо поля
+            // Очистка полів
             login_email.value = "";
             login_pass.value = "";
 
+            // Перехід далі
             onLogin(user.role);
         });
-    } else {
-        console.error("Auth Error: Кнопка 'login-submit' не знайдена.");
     }
 }

@@ -72,9 +72,9 @@
                         <label for="reg-class">Оберіть ваш клас:</label>
                         <select id="reg-class" required>
                             <option value="">-- Оберіть --</option>
-                            <option value="9A">9-А</option>
-                            <option value="9B">9-Б</option>
-                            <option value="10A">10-А</option>
+                            <option value="8А">8-А</option>
+                            <option value="8Б">8-Б</option>
+                            <option value="8В">8-В</option>
                         </select>
                     </div>
 
@@ -125,37 +125,69 @@
 
         <main id="student-panel" class="main-panel">
             
-            <div id="view-home" class="panel-view active">
-                <h2>Вітаємо, герою!</h2>
-                <p>Твоя пригода починається тут. Готовий до бою?</p>
+            <div id="view-home" class="panel-view active home-profile-layout">
+                <h1 class="page-title">Кабінет учня</h1>
                 
-                <div class="campaign-container">
-                    <button id="btn-start-campaign" class="btn large primary pulse">
-                        ⚔️ Почати похід (Unity)
+                <div class="profile-header">
+                    <div class="profile-info">
+                        <h2 id="student-name-display">Ім'я Учня</h2>
+                        <p id="student-email-display" class="info-text">email</p>
+                        <p class="info-text">Клас: <span id="student-class-display" class="highlight-text">--</span></p>
+                    </div>
+                    
+                    <div class="coin-balance-card">
+                        <span class="coin-icon">💰</span>
+                        <span id="student-gold-display">0</span>
+                    </div>
+                </div>
+
+                <hr class="custom-divider">
+
+                <div class="inventory-section">
+                    <h3>🎒 Ваші придбані нагороди:</h3>
+                    <ul id="student-inventory-list" class="inventory-list">
+                        <li class="empty-msg">Поки що пусто... Завітайте до Скарбниці!</li>
+                    </ul>
+                </div>
+
+                <div class="action-area" style="margin-top: 40px;">
+                    <button id="btn-start-lesson" class="btn-wide-white">
+                        ПОЧАТИ УРОК
                     </button>
                 </div>
+
                 <div id="unity-container" class="hidden"></div>
             </div>
 
             <div id="view-treasury" class="panel-view hidden">
-                <h2>💰 Скарбниця</h2>
-                <p>Тут ви зможете купувати покращення за зароблене золото.</p>
+                <h2 style="text-align:center; margin-bottom:20px;">💰 Скарбниця Гільдії</h2>
+                <div class="treasury-grid">
+                    
+                    <div class="reward-column">
+                        <div class="reward-header">Мікро-нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="rewards-micro-list">
+                            </div>
+                    </div>
+
+                    <div class="reward-column">
+                        <div class="reward-header">Середні нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="rewards-medium-list"></div>
+                    </div>
+
+                    <div class="reward-column">
+                        <div class="reward-header">Великі нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="rewards-large-list"></div>
+                    </div>
+
+                </div>
             </div>
 
-            <div id="view-leaderboard" class="panel-view hidden">
-                <h2>🏆 Рейтинг класу</h2>
-                <p>Список найкращих учнів.</p>
-            </div>
-
-            <div id="view-profile" class="panel-view hidden">
-                <h2>👤 Профіль та Досягнення</h2>
-                <p>Ваша статистика та отримані бейджі.</p>
-            </div>
-
-            <div id="view-settings" class="panel-view hidden">
-                <h2>⚙️ Налаштування</h2>
-                <p>Зміна паролю, звуку та інших параметрів.</p>
-            </div>
+            <div id="view-leaderboard" class="panel-view hidden"><h2>🏆 Рейтинг</h2></div>
+            <div id="view-profile" class="panel-view hidden"><h2>👤 Профіль</h2></div>
+            <div id="view-settings" class="panel-view hidden"><h2>⚙️ Налаштування</h2></div>
         </main>
     </section>
 
@@ -196,8 +228,30 @@
              </div>
 
              <div id="view-treasury-editor" class="panel-view hidden">
-                 <h2>Налаштування Скарбниці</h2>
-                 <p>Встановлення цін на нагороди.</p>
+                 <h2 style="text-align:center; margin-bottom:20px; color: var(--accent-gold);">💎 Редагування цін Скарбниці</h2>
+                 <p style="text-align:center; margin-bottom:30px;">Тут ви можете змінювати ціни на нагороди для учнів.</p>
+                 
+                 <div class="treasury-grid">
+                    
+                    <div class="reward-column">
+                        <div class="reward-header">Мікро-нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="teacher-rewards-micro"></div> 
+                    </div>
+
+                    <div class="reward-column">
+                        <div class="reward-header">Середні нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="teacher-rewards-medium"></div>
+                    </div>
+
+                    <div class="reward-column">
+                        <div class="reward-header">Великі нагороди</div>
+                        <div class="dashed-line"></div>
+                        <div id="teacher-rewards-large"></div>
+                    </div>
+
+                </div>
              </div>
 
              <div id="view-analytics" class="panel-view hidden">
