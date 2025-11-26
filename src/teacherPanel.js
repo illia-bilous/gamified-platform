@@ -1,77 +1,124 @@
-import { getShopItems, updateItemPrice } from "./shopData.js"; // Імпорт функцій магазину
+import { getShopItems, updateItemPrice } from "./shopData.js"; // <--- Імпортуємо логіку магазину
+
+// Зберігаємо ключ, під яким будуть лежати налаштування гри
+const GAME_CONFIG_KEY = "game_config_data";
 
 export function initTeacherPanel() {
-    console.log("TeacherPanel: Ініціалізація...");
-    
-    // Запускаємо логіку редактора
-    initTreasuryEditor();
-}
+    console.log("TeacherPanel: Init...");
 
-function initTreasuryEditor() {
-    // 1. Отримуємо товари з "бази"
-    const shopItems = getShopItems();
+    // 1. Завантажуємо налаштування гри (Unity)
+    loadGameSettings();
 
-    // 2. Рендеримо їх у відповідні колонки (які ми створили в HTML вище)
-    renderTeacherShopSection("teacher-rewards-micro", shopItems.micro);
-    renderTeacherShopSection("teacher-rewards-medium", shopItems.medium);
-    renderTeacherShopSection("teacher-rewards-large", shopItems.large);
-}
-
-function renderTeacherShopSection(containerId, items) {
-    const container = document.getElementById(containerId);
-    if (!container) {
-        console.warn(`Контейнер #${containerId} не знайдено! Перевірте HTML.`);
-        return;
+    // 2. Обробка кнопки "Зберегти" для гри
+    const saveBtn = document.getElementById("btn-save-game-settings");
+    if (saveBtn) {
+        saveBtn.onclick = saveGameSettings;
     }
-    container.innerHTML = "";
 
-    items.forEach(item => {
-        const itemDiv = document.createElement("div");
-        itemDiv.className = "shop-item"; 
-        
-        itemDiv.innerHTML = `
+    // 3. 👇 ЗАВАНТАЖУЄМО РЕДАКТОР СКАРБНИЦІ (НОВЕ)
+    renderTreasuryEditor();
+}
+
+// =================================================
+// 🛍️ ЛОГІКА РЕДАКТОРА СКАРБНИЦІ
+// =================================================
+
+function renderTreasuryEditor() {
+    console.log("Rendering Treasury Editor...");
+    const items = getShopItems(); // Беремо товари з твого shopData.js
+
+    // Рендеримо 3 категорії у відповідні блоки в HTML
+    renderCategory("teacher-rewards-micro", items.micro);
+    renderCategory("teacher-rewards-medium", items.medium);
+    renderCategory("teacher-rewards-large", items.large);
+}
+
+function renderCategory(containerId, itemList) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    container.innerHTML = ""; // Очищаємо перед малюванням
+
+    itemList.forEach(item => {
+        // Створюємо картку редагування товару
+        const div = document.createElement("div");
+        div.className = "shop-item";
+        div.style.background = "#222"; // Темніший фон для редактора
+        div.style.border = "1px solid #444";
+
+        div.innerHTML = `
             <div class="shop-item-row">
-                <div class="item-name">${item.name}</div>
-                <div class="item-price" id="price-${item.id}">${item.price} 💰</div>
+                <div class="item-name" style="color: #eee;">${item.name}</div>
+                <div style="width: 45%; text-align: right;">
+                    <input type="number" id="price-${item.id}" value="${item.price}" 
+                           style="width: 70px; padding: 5px; background: #333; color: gold; border: 1px solid #555; border-radius: 5px; text-align: center;">
+                    💰
+                </div>
             </div>
-            <div class="item-desc">${item.desc}</div>
-            
-            <button class="btn-edit-price" data-id="${item.id}" style="
-                background: transparent; 
-                border: 1px solid #f39c12; 
-                color: #f39c12; 
-                width: 100%; 
-                padding: 8px; 
-                border-radius: 8px; 
-                cursor: pointer;
-                text-transform: uppercase;
-                font-weight: bold;
-                margin-top: 5px;
-                font-size: 0.8rem;">
-                ✏️ Редагувати ціну
+            <div class="item-desc" style="margin-bottom: 10px; font-size: 0.8rem; color: #aaa;">${item.desc}</div>
+            <button class="btn-save-price" data-id="${item.id}" 
+                    style="width: 100%; padding: 8px; background: #2ecc71; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; text-transform: uppercase;">
+                💾 Зберегти ціну
             </button>
         `;
 
-        // Логіка зміни ціни
-        const btn = itemDiv.querySelector(".btn-edit-price");
-        btn.addEventListener("click", () => {
-            const newPriceStr = prompt(`Введіть нову ціну для "${item.name}":`, item.price);
+        // Додаємо логіку на кнопку "Зберегти"
+        const btn = div.querySelector(".btn-save-price");
+        btn.onclick = () => {
+            const input = document.getElementById(`price-${item.id}`);
+            const newPrice = input.value;
             
-            if (newPriceStr !== null) {
-                const newPrice = parseInt(newPriceStr);
-                if (!isNaN(newPrice) && newPrice >= 0) {
-                    // Оновлюємо в базі
-                    updateItemPrice(item.id, newPrice);
-                    
-                    // Оновлюємо на екрані
-                    document.getElementById(`price-${item.id}`).textContent = `${newPrice} 💰`;
-                    item.price = newPrice; 
-                } else {
-                    alert("Будь ласка, введіть коректне число.");
-                }
+            // Викликаємо функцію оновлення з shopData.js
+            const success = updateItemPrice(item.id, newPrice);
+            
+            if (success) {
+                alert(`Ціну на "${item.name}" оновлено до ${newPrice}!`);
+                input.style.borderColor = "#2ecc71"; // Зелена рамка як підтвердження
+            } else {
+                alert("Помилка збереження!");
             }
-        });
+        };
 
-        container.appendChild(itemDiv);
+        container.appendChild(div);
     });
+}
+
+// =================================================
+// 🎮 ЛОГІКА НАЛАШТУВАНЬ ГРИ (UNITY)
+// =================================================
+
+function loadGameSettings() {
+    // Дістаємо з пам'яті або беремо стандартні
+    const rawData = localStorage.getItem(GAME_CONFIG_KEY);
+    const config = rawData ? JSON.parse(rawData) : { reward: 10, btnText: "+10 Coins" };
+
+    // Заповнюємо інпути
+    const inputReward = document.getElementById("setting-reward-amount");
+    const inputText = document.getElementById("setting-button-text");
+
+    if (inputReward) inputReward.value = config.reward;
+    if (inputText) inputText.value = config.btnText;
+}
+
+function saveGameSettings() {
+    const inputReward = document.getElementById("setting-reward-amount");
+    const inputText = document.getElementById("setting-button-text");
+    const statusMsg = document.getElementById("settings-status");
+
+    // Зчитуємо дані
+    const newConfig = {
+        reward: parseInt(inputReward.value) || 10,
+        btnText: inputText.value || "+10 Coins"
+    };
+
+    // Зберігаємо в LocalStorage
+    localStorage.setItem(GAME_CONFIG_KEY, JSON.stringify(newConfig));
+
+    console.log("Teacher: Game settings saved:", newConfig);
+
+    // Показуємо повідомлення "Збережено"
+    if (statusMsg) {
+        statusMsg.style.display = "block";
+        setTimeout(() => statusMsg.style.display = "none", 3000);
+    }
 }

@@ -12,30 +12,16 @@ function saveUserData(user) {
     }
 }
 
+// 👇 Змінна для захисту від дублювання слухача Unity
+let isListenerAdded = false;
+
 export function initStudentPanel() {
-    console.log("StudentPanel: Init (Tabs restored + Wide Game)...");
+    console.log("StudentPanel: Init...");
     
     let user = getCurrentUser();
     if (!user) return;
 
-    // --- Логіка перемикання вкладок (МЕНЮ ЗЛІВА) ---
-    const menuItems = document.querySelectorAll(".menu-item[data-panel]");
-    const views = document.querySelectorAll(".panel-view");
-
-    menuItems.forEach(btn => {
-        btn.addEventListener("click", () => {
-            // 1. Прибираємо активний клас з усіх кнопок
-            menuItems.forEach(b => b.classList.remove("active"));
-            // 2. Додаємо активний клас натиснутій кнопці
-            btn.classList.add("active");
-
-            // 3. Ховаємо всі вкладки
-            views.forEach(v => v.classList.add("hidden"));
-            // 4. Показуємо потрібну вкладку
-            const panelId = "view-" + btn.dataset.panel;
-            document.getElementById(panelId).classList.remove("hidden");
-        });
-    });
+    // ✂️ ТУТ Я ВИДАЛИВ ЗАЙВИЙ КОД НАВІГАЦІЇ (Він вже є в router.js)
 
     // --- Логіка бонусу ---
     if (!user.profile.welcomeBonusReceived) {
@@ -50,40 +36,47 @@ export function initStudentPanel() {
 
     // --- Завантаження магазину ---
     const shopItems = getShopItems();
+    // Малюємо полиці магазину
     renderShopSection("rewards-micro-list", shopItems.micro);
     renderShopSection("rewards-medium-list", shopItems.medium);
     renderShopSection("rewards-large-list", shopItems.large);
 
     // ==========================================
-    // 🎮 ЛОГІКА UNITY (ГРА)
+    // 🎮 ЛОГІКА UNITY
     // ==========================================
 
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
 
-    window.addEventListener("message", function(event) {
-        if (typeof event.data !== "string") return;
-        
-        if (event.data.startsWith("ADD_COINS|")) {
-            const amount = parseInt(event.data.split("|")[1]);
-            user = getCurrentUser(); 
-            user.profile.gold += amount;
-            saveUserData(user);
-            updateHomeDisplay(user);
-        }
+    if (!isListenerAdded) {
+        window.addEventListener("message", function(event) {
+            if (typeof event.data !== "string") return;
+            
+            if (event.data.startsWith("ADD_COINS|")) {
+                const amount = parseInt(event.data.split("|")[1]);
+                console.log(`Нараховуємо: ${amount} монет`);
+                let currentUser = getCurrentUser(); 
+                if (currentUser) {
+                    currentUser.profile.gold += amount;
+                    saveUserData(currentUser);
+                    updateHomeDisplay(currentUser);
+                }
+            }
 
-        if (event.data === "CLOSE_GAME") {
-            closeUnityGame();
-        }
-    });
+            if (event.data === "CLOSE_GAME") {
+                closeUnityGame();
+            }
+        });
+        isListenerAdded = true;
+        console.log("System: Unity Listener Activated (ONCE)");
+    }
 
     if (startBtn) {
         startBtn.onclick = () => {
             if (unityContainer) {
                 unityContainer.classList.remove("hidden");
-                startBtn.style.display = "none"; // Ховаємо кнопку
+                startBtn.style.display = "none"; 
 
-                // Кнопка закриття
                 if (!document.getElementById("btn-force-close-unity")) {
                     const closeBtn = document.createElement("button");
                     closeBtn.id = "btn-force-close-unity";
@@ -93,7 +86,6 @@ export function initStudentPanel() {
                     unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
                 }
 
-                // Вставляємо iframe
                 const iframe = unityContainer.querySelector("iframe");
                 if (!iframe) {
                      const newIframe = document.createElement("iframe");
@@ -107,7 +99,7 @@ export function initStudentPanel() {
         };
     }
 
-    function closeUnityGame() {
+    window.closeUnityGame = function() {
         if (unityContainer) {
             unityContainer.classList.add("hidden");
             const iframe = unityContainer.querySelector("iframe");
@@ -116,7 +108,8 @@ export function initStudentPanel() {
         const closeBtn = document.getElementById("btn-force-close-unity");
         if (closeBtn) closeBtn.remove();
         
-        if(startBtn) startBtn.style.display = "inline-block"; // Повертаємо кнопку
+        if(startBtn) startBtn.style.display = "inline-block"; 
+        
         user = getCurrentUser();
         updateHomeDisplay(user);
     };
@@ -124,11 +117,21 @@ export function initStudentPanel() {
     // --- Допоміжні функції ---
 
     function updateHomeDisplay(currentUser) {
-        document.getElementById("student-name-display").textContent = currentUser.name;
-        document.getElementById("student-class-display").textContent = currentUser.className || "--";
-        document.getElementById("student-gold-display").textContent = currentUser.profile.gold;
+        if (!currentUser) return;
+        
+        const nameEl = document.getElementById("student-name-display");
+        const classEl = document.getElementById("student-class-display");
+        const goldEl = document.getElementById("student-gold-display");
 
-        // Інвентар (тепер він у вкладці Профіль)
+        if (nameEl) nameEl.textContent = currentUser.name;
+        if (classEl) classEl.textContent = currentUser.className || "--";
+        if (goldEl) {
+            goldEl.textContent = currentUser.profile.gold;
+            goldEl.classList.remove("pulse");
+            void goldEl.offsetWidth;
+            goldEl.classList.add("pulse");
+        }
+
         const listEl = document.getElementById("student-inventory-list");
         if (listEl) {
             listEl.innerHTML = "";
@@ -147,8 +150,15 @@ export function initStudentPanel() {
 
     function renderShopSection(containerId, items) {
         const container = document.getElementById(containerId);
-        if (!container) return;
+        if (!container) return; // Якщо блоку немає - виходимо мовчки
+        
         container.innerHTML = "";
+
+        // Перевірка на пустоту
+        if (!items || items.length === 0) {
+            container.innerHTML = "<div style='color:#aaa; font-style:italic;'>Тут поки пусто...</div>";
+            return;
+        }
 
         items.forEach(item => {
             const itemDiv = document.createElement("div");
@@ -171,7 +181,7 @@ export function initStudentPanel() {
         const realItem = findItemById(visualItem.id);
 
         if (!realItem) { alert("Товар не знайдено."); return; }
-        if (realItem.price !== visualItem.price) { alert("Ціна змінилася."); location.reload(); return; }
+        if (realItem.price !== visualItem.price) { alert("Ціна змінилася. Сторінка оновлюється."); location.reload(); return; }
 
         if (user.profile.gold >= realItem.price) {
             user.profile.gold -= realItem.price;

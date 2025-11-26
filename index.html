@@ -154,21 +154,25 @@
             <div id="view-treasury" class="panel-view hidden">
                 <h2 style="text-align:center; margin-bottom:20px;">💰 Скарбниця Гільдії</h2>
                 <div class="treasury-grid">
+                    
                     <div class="reward-column">
                         <div class="reward-header">Мікро-нагороди</div>
                         <div class="dashed-line"></div>
                         <div id="rewards-micro-list"></div>
                     </div>
+
                     <div class="reward-column">
                         <div class="reward-header">Середні нагороди</div>
                         <div class="dashed-line"></div>
                         <div id="rewards-medium-list"></div>
                     </div>
+
                     <div class="reward-column">
                         <div class="reward-header">Великі нагороди</div>
                         <div class="dashed-line"></div>
                         <div id="rewards-large-list"></div>
                     </div>
+
                 </div>
             </div>
 
@@ -227,9 +231,30 @@
              </div>
              
              <div id="view-tasks" class="panel-view hidden">
-                 <h2>Редактор Завдань (Замків)</h2>
-                 <p>Створення нових тестів та завдань.</p>
-             </div>
+                <h2 style="text-align:center; color: var(--accent-gold);">⚙️ Налаштування Гри (Unity)</h2>
+                
+                <div class="card-content" style="max-width: 500px; margin: 0 auto; background: #222; color: white;">
+                    <h3 style="margin-bottom: 20px;">Параметри кнопки</h3>
+                    
+                    <form id="game-settings-form">
+                        <label for="setting-reward-amount" style="color: #aaa;">💰 Нагорода за клік (монет):</label>
+                        <input type="number" id="setting-reward-amount" value="10" min="1" max="1000" style="background: #333; color: white; border: 1px solid #555;">
+
+                        <label for="setting-button-text" style="color: #aaa;">🏷 Текст на кнопці:</label>
+                        <input type="text" id="setting-button-text" value="+10 Монет" style="background: #333; color: white; border: 1px solid #555;">
+
+                        <div class="dashed-line"></div>
+
+                        <button type="button" id="btn-save-game-settings" class="btn primary">💾 ЗБЕРЕГТИ НАЛАШТУВАННЯ</button>
+                    </form>
+                    
+                    <p id="settings-status" style="margin-top: 15px; font-size: 0.9em; color: var(--accent-green); display: none;">✅ Налаштування збережено!</p>
+                </div>
+
+                <p style="text-align: center; margin-top: 20px; color: #777;">
+                    ℹ️ Учні побачать зміни при наступному запуску гри.
+                </p>
+            </div>
 
              <div id="view-treasury-editor" class="panel-view hidden">
                  <h2 style="text-align:center; margin-bottom:20px; color: var(--accent-gold);">💎 Редагування цін Скарбниці</h2>

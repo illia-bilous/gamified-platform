@@ -1,6 +1,6 @@
 // src/shopData.js
 
-// Початкові дані (якщо база пуста)
+// Початкові дані (Ті самі, що на твоєму скріншоті)
 const DEFAULT_ITEMS = {
     micro: [
         { id: "m1", name: "Магічна Підказка", desc: "Один раз в симуляторі", price: 200 },
@@ -18,40 +18,49 @@ const DEFAULT_ITEMS = {
     ]
 };
 
-// Отримати всі товари (з LocalStorage або дефолтні)
+// Отримати всі товари (з захистом від пустоти)
 export function getShopItems() {
     const stored = localStorage.getItem("shopItems");
+    
     if (stored) {
-        return JSON.parse(stored);
+        try {
+            const parsed = JSON.parse(stored);
+            // Якщо база "бита" або пуста - відновлюємо
+            if (!parsed.micro || parsed.micro.length === 0) {
+                console.warn("ShopData: База пуста. Відновлюємо...");
+                localStorage.setItem("shopItems", JSON.stringify(DEFAULT_ITEMS));
+                return DEFAULT_ITEMS;
+            }
+            return parsed;
+        } catch (e) {
+            return DEFAULT_ITEMS;
+        }
     } else {
-        // Перший запуск: зберігаємо дефолтні і повертаємо їх
+        // Перший запуск
         localStorage.setItem("shopItems", JSON.stringify(DEFAULT_ITEMS));
         return DEFAULT_ITEMS;
     }
 }
 
-// Оновити ціну товару (для Вчителя)
+// Оновити ціну (для вчителя)
 export function updateItemPrice(itemId, newPrice) {
     const items = getShopItems();
+    const allLists = [items.micro, items.medium, items.large];
     
-    // Проходимо по всіх категоріях, щоб знайти товар за ID
-    for (const category in items) {
-        const product = items[category].find(p => p.id === itemId);
+    for (let list of allLists) {
+        const product = list.find(p => p.id === itemId);
         if (product) {
             product.price = parseInt(newPrice);
-            localStorage.setItem("shopItems", JSON.stringify(items)); // Зберігаємо зміни
+            localStorage.setItem("shopItems", JSON.stringify(items));
             return true;
         }
     }
     return false;
 }
 
-// Знайти актуальний товар за ID (для перевірки перед покупкою Учнем)
+// Знайти товар за ID
 export function findItemById(itemId) {
     const items = getShopItems();
-    for (const category in items) {
-        const product = items[category].find(p => p.id === itemId);
-        if (product) return product;
-    }
-    return null;
+    const all = [...items.micro, ...items.medium, ...items.large];
+    return all.find(i => i.id === itemId);
 }

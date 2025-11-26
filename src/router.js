@@ -1,7 +1,7 @@
 import { showScreen } from "./ui.js";
 import { initAuth, getCurrentUser } from "./auth.js";
 import { initStudentPanel } from "./studentPanel.js";
-import { initTeacherPanel } from "./teacherPanel.js";
+import { initTeacherPanel } from "./teacherPanel.js"; // <--- ВАЖЛИВО
 
 let currentRole = null;
 
@@ -13,45 +13,32 @@ const logout = () => {
     showScreen("screen-home");
 };
 
-/**
- * Допоміжна функція для налаштування обробників подій з логуванням помилок.
- */
 function setupButtonListener(id, handler) {
     const btn = document.getElementById(id);
     if (btn) {
         btn.addEventListener("click", handler);
-        // console.log(`Router: Обробник події прив'язаний до #${id}`);
-    } else {
-        // Не кричимо в консоль, якщо елемент не знайдено (наприклад, якщо ми на іншому екрані)
     }
 }
 
 /**
- * Основна функція для навігації всередині Dashboard (Кабінету)
- * Перемикає вкладки: Головна -> Скарбниця -> Профіль і т.д.
- * @param {string} screenId - ID батьківського екрану (screen-student або screen-teacher)
+ * Основна навігація (Вкладки)
  */
 function setupDashboardNavigation(screenId) {
     const container = document.getElementById(screenId);
     if (!container) return;
 
-    // Знаходимо всі кнопки меню, крім "Вихід"
     const menuButtons = container.querySelectorAll('.menu-item:not(.logout)');
-    
-    // Знаходимо всі панелі контенту (views) всередині цього екрану
     const views = container.querySelectorAll('.panel-view');
 
     menuButtons.forEach(btn => {
-        // Видаляємо старі лісенери (через клонування) або просто додаємо нові обережно
-        // Тут використовуємо простий підхід:
         btn.onclick = () => {
-            const panelName = btn.dataset.panel; // наприклад: 'treasury'
+            const panelName = btn.dataset.panel;
             
-            // 1. Оновлюємо активну кнопку в меню
+            // Оновлюємо кнопки
             menuButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
-            // 2. Ховаємо всі views і показуємо потрібний
+            // Перемикаємо вкладки
             views.forEach(view => {
                 view.classList.remove('active');
                 view.classList.add('hidden');
@@ -61,64 +48,31 @@ function setupDashboardNavigation(screenId) {
             if (targetView) {
                 targetView.classList.remove('hidden');
                 targetView.classList.add('active');
-            } else {
-                console.warn(`View не знайдено для панелі: view-${panelName}`);
             }
         };
     });
-
-    // Окремий обробник для кнопки запуску Unity (якщо вона є)
-    const startUnityBtn = document.getElementById("btn-start-campaign");
-    if (startUnityBtn) {
-        startUnityBtn.onclick = () => {
-            alert("⚔️ Запуск Unity... (Тут буде завантажувач гри)");
-            // Тут пізніше додамо логіку: document.getElementById('unity-container').classList.remove('hidden');
-        };
-    }
 }
 
-/**
- * Ініціалізує всі обробники подій та перевіряє сесію.
- */
 function initializeApp() {
-    console.log("initializeApp: Ініціалізація обробників подій...");
+    console.log("initializeApp: Start...");
 
-    // ----------------------------------------------------
-    // --- ТИМЧАСОВО: Очищення бази даних ---
-    // ----------------------------------------------------
+    // Тимчасова очистка
     setupButtonListener("btn-debug-clear-users", () => {
-        const confirmed = confirm("Ви точно хочете видалити ВСІХ користувачів?");
-        if (confirmed) {
-            localStorage.removeItem("users");
-            localStorage.removeItem("currentUser");
-            alert("База очищена!");
+        if (confirm("Видалити ВСІХ користувачів?")) {
+            localStorage.clear();
             location.reload();
         }
     });
 
-    // ----------------------------------------------------
-    // --- Навігація: Вхід / Реєстрація ---
-    // ----------------------------------------------------
-
-    setupButtonListener("btn-role-student", () => {
-        currentRole = "student";
-        showScreen("screen-auth-choice");
-    });
-
-    setupButtonListener("btn-role-teacher", () => {
-        currentRole = "teacher";
-        showScreen("screen-auth-choice");
-    });
-
+    // Навігація входу
+    setupButtonListener("btn-role-student", () => { currentRole = "student"; showScreen("screen-auth-choice"); });
+    setupButtonListener("btn-role-teacher", () => { currentRole = "teacher"; showScreen("screen-auth-choice"); });
     setupButtonListener("btn-back-to-home", () => showScreen("screen-home"));
     setupButtonListener("btn-login", () => showScreen("screen-login"));
 
     setupButtonListener("btn-register", () => {
         showScreen("screen-register");
-        
         const role = currentRole || "student";
-        
-        // Логіка перемикання полів форми
         const teacherKeyField = document.getElementById("register-teacher-key");
         const classSelectField = document.getElementById("select-class-wrapper");
         
@@ -129,51 +83,37 @@ function initializeApp() {
             teacherKeyField?.classList.add("hidden");
             classSelectField?.classList.remove("hidden");
         }
-
         document.getElementById("register-form-content")?.classList.remove("hidden");
         document.getElementById("register-success")?.classList.add("hidden");
     });
 
     setupButtonListener("btn-back-auth1", () => showScreen("screen-auth-choice"));
     setupButtonListener("btn-back-auth2", () => showScreen("screen-auth-choice"));
-
     setupButtonListener("logout-student", logout);
     setupButtonListener("logout-teacher", logout);
 
-    // ----------------------------------------------------
-    // --- Ініціалізація Аутентифікації та Запуск ---
-    // ----------------------------------------------------
-
-    // 1. Колбек при успішному вході через форму
-    initAuth((role) => {
+    // Ініціалізація сесії
+    const handleLoginSuccess = (role) => {
         if (role === "student") {
             showScreen("screen-student");
-            setupDashboardNavigation("screen-student"); // <--- Активуємо меню
+            setupDashboardNavigation("screen-student");
             initStudentPanel();
         } else {
             showScreen("screen-teacher");
-            setupDashboardNavigation("screen-teacher"); // <--- Активуємо меню
-            initTeacherPanel();
+            setupDashboardNavigation("screen-teacher");
+            initTeacherPanel(); // <--- Запуск панелі вчителя
         }
-    });
+    };
 
-    // 2. Перевірка збереженої сесії (при оновленні сторінки)
+    initAuth(handleLoginSuccess);
+
     const user = getCurrentUser();
     if (user) {
         currentRole = user.role;
-        if (user.role === "student") {
-            showScreen("screen-student");
-            setupDashboardNavigation("screen-student"); // <--- Активуємо меню
-            initStudentPanel();
-        } else {
-            showScreen("screen-teacher");
-            setupDashboardNavigation("screen-teacher"); // <--- Активуємо меню
-            initTeacherPanel();
-        }
+        handleLoginSuccess(user.role);
     } else {
         showScreen("screen-home");
     }
 }
 
-// Запускаємо
 initializeApp();
