@@ -138,59 +138,111 @@ async function renderClassLeaderboard(className) {
             <td class="name-col">${student.name}</td>
             <td class="gold-col">${student.profile.gold || 0} 💰</td>
             <td class="action-col">
-                <button class="btn btn-sm btn-edit-gold" data-uid="${student.uid}">Редагувати</button>
+                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Результати</button>
             </td>
         `;
         tbody.appendChild(tr);
     });
     
-    // 4. Підключаємо логіку редагування
-    setupGoldEditor(students);
+    // 4. Підключаємо логіку перегляду профілю (замість редагування)
+    setupProfileView(students);
 }
 
 // =========================================================
-// ✏️ ЛОГІКА РЕДАГУВАННЯ ЗОЛОТА ВЧИТЕЛЕМ
+// 👁️ ЛОГІКА ПЕРЕГЛЯДУ ПРОФІЛЮ УЧНЯ
 // =========================================================
 
-function setupGoldEditor(students) {
-    document.querySelectorAll('.btn-edit-gold').forEach(button => {
+function setupProfileView(students) {
+    document.querySelectorAll('.btn-view-profile').forEach(button => {
         button.addEventListener('click', (e) => {
             const studentUid = e.target.dataset.uid;
             const student = students.find(s => s.uid === studentUid);
             
-            if (!student) return alert("Помилка: Учня не знайдено!");
-
-            const currentGold = student.profile.gold || 0;
-            const newGoldStr = prompt(`Введіть нову суму золота для ${student.name} (поточна: ${currentGold} 💰):`);
-            
-            if (newGoldStr === null) return; 
-            
-            const newGold = parseInt(newGoldStr);
-            
-            if (isNaN(newGold) || newGold < 0) {
-                return alert("Будь ласка, введіть дійсне додатне число.");
+            if (student) {
+                renderStudentProfile(student);
+            } else {
+                alert("Помилка: Дані учня не знайдено!");
             }
-            
-            updateStudentGold(studentUid, newGold, student.className, student.name);
         });
     });
 }
 
-async function updateStudentGold(uid, newGold, className, studentName) {
-    try {
-        const userRef = doc(db, "users", uid);
-        
-        await updateDoc(userRef, {
-            "profile.gold": newGold
-        });
+// =========================================================
+// 👤 ФУНКЦІЯ РЕНДЕРИНГУ ПРОФІЛЮ УЧНЯ (ОНОВЛЕНА)
+// =========================================================
 
-        alert(`✅ Золото ${studentName} оновлено до ${newGold}!`);
-        
-        // Перезавантажуємо лідерборд, щоб показати оновлені дані
-        renderClassLeaderboard(className); 
+async function renderStudentProfile(student) {
+    const container = document.getElementById("teacher-content");
+    if (!container) return;
 
-    } catch (error) {
-        console.error("Помилка оновлення золота:", error);
-        alert("❌ Помилка: Не вдалося оновити золото в базі даних.");
-    }
+    // Дані для відображення
+    const inventory = student.profile.inventory || [];
+    
+    // 1. Логіка Стакування Нагород
+    const stackedInventory = inventory.reduce((acc, item) => {
+        const itemName = item.name || 'Нагорода без назви';
+        acc[itemName] = (acc[itemName] || 0) + 1;
+        return acc;
+    }, {});
+    
+    // 2. Створення HTML-списку з групуванням
+    const inventoryKeys = Object.keys(stackedInventory);
+    const inventoryList = inventoryKeys.length > 0
+        ? inventoryKeys.map(name => {
+            const count = stackedInventory[name];
+            const countText = count > 1 ? ` (x${count})` : '';
+            return `<li>**${name}**${countText}</li>`;
+        }).join('')
+        : '<li>Нагороди ще не придбані.</li>';
+        
+    const goldDisplay = student.profile.gold || 0;
+
+    // ... решта функції залишається тією самою до HTML-шаблону
+
+    // HTML-шаблон профілю
+    container.innerHTML = `
+        <div class="teacher-header" style="text-align: center;">
+            <button id="btn-back-to-leaderboard" class="btn btn-secondary" style="float: left;">← Назад до лідерборду</button>
+            <h2 style="font-size: 2em; margin-bottom: 5px;">👤 ПРОФІЛЬ УЧНЯ</h2>
+            <h1 style="color: var(--accent-gold); margin-top: 0; font-size: 2.5em;">${student.name}</h1>
+            <p style="margin-bottom: 30px;">Детальна інформація про прогрес та нагороди.</p>
+        </div>
+
+        <div class="profile-dashboard-grid">
+            
+            <div class="card profile-info-card" style="padding: 20px;">
+                <h3 style="color: var(--primary-color); border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px;">Основні Дані</h3>
+                
+                <div class="info-line">
+                    <strong>🎓 Клас:</strong> <span style="font-size: 1.2em; font-weight: bold;">${student.className}</span>
+                </div>
+                
+                <div class="info-line">
+                    <strong>📧 Email:</strong> <span>${student.email}</span>
+                </div>
+                
+            </div>
+
+            <div class="card profile-rewards-card" style="padding: 20px;">
+                
+                <h3 style="color: var(--accent-gold); text-align: center;">💰 Баланс Золота</h3>
+                <p class="big-gold-amount" style="font-size: 3em; font-weight: bold; text-align: center; color: var(--accent-gold); margin-top: 0;">
+                    ${goldDisplay} 💰
+                </p>
+                
+                <div style="border-top: 1px dashed #555; margin: 20px 0;"></div>
+                
+                <h3 style="color: var(--primary-color); text-align: center;">🎁 Отримані Нагороди</h3>
+                <ul class="rewards-list" style="list-style-type: none; padding-left: 0;">
+                    ${inventoryList}
+                </ul>
+            </div>
+            
+        </div>
+    `;
+
+    // Обробка кнопки "Назад"
+    document.getElementById("btn-back-to-leaderboard").onclick = () => {
+        renderClassLeaderboard(student.className); 
+    };
 }

@@ -671,3 +671,45 @@ label {
     color: #666;
     font-size: 0.9rem;
 }
+
+/* Додайте це до вашого assets/css/styles.css */
+
+/* Стилізація профілю учня для вчителя */
+.profile-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Ділимо на дві рівні колонки */
+    gap: 30px; /* Відстань між картками */
+    max-width: 900px;
+    margin: 0 auto; /* Центруємо сітку */
+}
+
+.profile-info-card,
+.profile-rewards-card {
+    background-color: #2c3e50; /* Темний фон для карток */
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    color: #ecf0f1; /* Світлий текст */
+}
+
+.info-line {
+    padding: 10px 0;
+    border-bottom: 1px dotted #444;
+}
+
+.info-line:last-child {
+    border-bottom: none;
+}
+
+.rewards-list li {
+    /* Стилі для фону та відступів залишаються */
+    background: #34495e; 
+    padding: 8px 15px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    font-size: 0.95em;
+    
+    /* *** НОВІ СТИЛІ *** */
+    color: #ecf0f1 !important; /* Білий/світлий колір тексту */
+    font-style: normal; /* Прибираємо курсив */
+    font-weight: bold; /* Робимо жирним */
+}
