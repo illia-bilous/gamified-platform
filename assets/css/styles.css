@@ -562,3 +562,61 @@ label {
     padding: 20px 0;
     font-size: 0.9em;
 }
+
+/* =========================================
+   13. ЛІДЕРБОРД (ТАБЛИЦЯ)
+   ========================================= */
+
+.leaderboard-wrapper {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    background: #1a1a2e; /* Темний фон */
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 1px solid #444;
+}
+
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    color: white;
+}
+
+.leaderboard-table th {
+    background-color: #0f3460;
+    padding: 15px;
+    font-size: 1.1rem;
+    color: var(--accent-gold);
+    border-bottom: 2px solid var(--accent-gold);
+}
+
+.leaderboard-table td {
+    padding: 15px;
+    border-bottom: 1px solid #333;
+    font-size: 1rem;
+}
+
+/* Чередування рядків (зебра) */
+.leaderboard-table tr:nth-child(even) {
+    background-color: rgba(255,255,255,0.03);
+}
+
+/* Стиль для "МЕНЕ" (поточного користувача) */
+.leaderboard-table tr.my-rank {
+    background-color: rgba(46, 204, 113, 0.2); /* Зеленувата підсвітка */
+    border-left: 4px solid var(--accent-green);
+}
+
+.rank-col {
+    font-weight: bold;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.gold-col {
+    color: #ffd700;
+    font-weight: bold;
+    text-align: center;
+}
