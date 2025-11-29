@@ -1,22 +1,17 @@
+// src/studentPanel.js
+
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemById } from "./shopData.js";
-// 👇 Додаємо updateDoc та doc
 import { db } from "./firebase.js"; 
-import { collection, query, where, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+// 👇 Важливі імпорти для читання налаштувань гри
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// 👇 ОНОВЛЕНА ФУНКЦІЯ ЗБЕРЕЖЕННЯ (Зберігає і локально, і в хмару)
 async function saveUserData(user) {
-    // 1. Зберігаємо локально (для швидкості)
     localStorage.setItem("currentUser", JSON.stringify(user));
-
-    // 2. Зберігаємо в Firebase (для надійності та лідерборду)
     if (user.uid) {
         try {
             const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, {
-                profile: user.profile
-            });
-            console.log("💾 Дані збережено в хмару!");
+            await updateDoc(userRef, { profile: user.profile });
         } catch (e) {
             console.error("Помилка збереження в хмару:", e);
         }
@@ -25,13 +20,32 @@ async function saveUserData(user) {
 
 let isListenerAdded = false;
 
-export function initStudentPanel() {
-    console.log("StudentPanel: Init (Cloud Save)...");
+// 👇 Функція стала ASYNC, щоб зачекати на завантаження конфігу з бази
+export async function initStudentPanel() {
+    console.log("StudentPanel: Init (Load Cloud Config)...");
     
+    // --- 🌍 1. ЗАВАНТАЖЕННЯ КОНФІГУРАЦІЇ ГРИ З ХМАРИ ---
+    try {
+        // Читаємо налаштування, які зберіг вчитель
+        const configRef = doc(db, "game_config", "maze_1");
+        const configSnap = await getDoc(configRef);
+
+        if (configSnap.exists()) {
+            const gameData = configSnap.data();
+            // 🔥 КЛЮЧОВИЙ МОМЕНТ: Записуємо дані з хмари в локальну пам'ять учня
+            // Unity прочитає їх звідси, коли запуститься!
+            localStorage.setItem("game_config_data", JSON.stringify(gameData));
+            console.log("🎮 Config updated from Cloud:", gameData);
+        } else {
+            console.log("⚠️ Config not found in Cloud, using local defaults.");
+        }
+    } catch (e) {
+        console.error("Failed to load game config:", e);
+    }
+    // ----------------------------------------------------
+
     let user = getCurrentUser();
     if (!user) return;
-
-    // (Стару логіку бонусу прибираємо, бо вона тепер в auth.js)
 
     updateHomeDisplay(user);
     renderLeaderboard(user);
@@ -57,9 +71,8 @@ export function initStudentPanel() {
                 let currentUser = getCurrentUser(); 
                 if (currentUser) {
                     currentUser.profile.gold += amount;
-                    saveUserData(currentUser); // Тепер зберігає в базу!
+                    saveUserData(currentUser); // Зберігаємо в базу
                     updateHomeDisplay(currentUser);
-                    // Оновлюємо лідерборд, щоб побачити свій прогрес
                     setTimeout(() => renderLeaderboard(currentUser), 1000);
                 }
             }
@@ -89,6 +102,7 @@ export function initStudentPanel() {
                 const iframe = unityContainer.querySelector("iframe");
                 if (!iframe) {
                      const newIframe = document.createElement("iframe");
+                     // Додаємо ?v=... для боротьби з кешем
                      newIframe.src = "unity/index.html?v=" + new Date().getTime(); 
                      newIframe.style.width = "100%";
                      newIframe.style.height = "100%";
@@ -108,14 +122,16 @@ export function initStudentPanel() {
         const closeBtn = document.getElementById("btn-force-close-unity");
         if (closeBtn) closeBtn.remove();
         if(startBtn) startBtn.style.display = "inline-block"; 
+        
         user = getCurrentUser();
         updateHomeDisplay(user);
         renderLeaderboard(user);
     };
 
     // ==========================================
-    // 🏆 ЛОГІКА ЛІДЕРБОРДУ
+    // 🏆 ПОВНІ ФУНКЦІЇ ВІДОБРАЖЕННЯ
     // ==========================================
+
     async function renderLeaderboard(currentUser) {
         const container = document.getElementById("view-leaderboard");
         if (!container) return;
@@ -187,10 +203,6 @@ export function initStudentPanel() {
             tbody.innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">Помилка завантаження</td></tr>`;
         }
     }
-
-    // ==========================================
-    // 🎒 ІНВЕНТАР
-    // ==========================================
 
     function updateHomeDisplay(currentUser) {
         if (!currentUser) return;
@@ -292,25 +304,25 @@ export function initStudentPanel() {
     }
 
     function buyItem(visualItem) {
-        user = getCurrentUser(); 
+        let u = getCurrentUser(); 
         const realItem = findItemById(visualItem.id);
 
         if (!realItem) { alert("Товар не знайдено."); return; }
         if (realItem.price !== visualItem.price) { alert("Ціна змінилася. Сторінка оновлюється."); location.reload(); return; }
 
-        if (user.profile.gold >= realItem.price) {
-            user.profile.gold -= realItem.price;
-            if (!user.profile.inventory) user.profile.inventory = [];
+        if (u.profile.gold >= realItem.price) {
+            u.profile.gold -= realItem.price;
+            if (!u.profile.inventory) u.profile.inventory = [];
             
-            user.profile.inventory.push({ 
+            u.profile.inventory.push({ 
                 id: realItem.id, 
                 name: realItem.name, 
                 date: new Date().toISOString() 
             });
             
-            saveUserData(user); // 🔥 Тепер зберігає в базу!
-            updateHomeDisplay(user);
-            renderLeaderboard(user); // І оновлює рейтинг
+            saveUserData(u); 
+            updateHomeDisplay(u);
+            renderLeaderboard(u); 
             alert(`Придбано: ${realItem.name}!`);
         } else {
             alert("Недостатньо золота!");

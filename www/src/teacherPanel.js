@@ -8,7 +8,8 @@ import {
     where, 
     orderBy, 
     doc, 
-    updateDoc 
+    updateDoc,
+    setDoc 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { getShopItems, updateItemPrice } from "./shopData.js"; 
@@ -17,12 +18,15 @@ import { getShopItems, updateItemPrice } from "./shopData.js";
 export function initTeacherPanel() {
     console.log("TeacherPanel: Init...");
     
+    // 1. Головна панель (Класи)
     renderTeacherDashboard("teacher-content"); 
 
+    // 2. Редактор Скарбниці
     setTimeout(() => {
         renderTreasureEditor();
     }, 100); 
 
+    // 3. Редактор Лабіринту (НОВИЙ)
     setTimeout(() => {
         initMazeEditor();
     }, 100);
@@ -46,6 +50,7 @@ let mazeConfigData = {
 function initMazeEditor() {
     console.log("Maze Editor: Init");
 
+    // Завантажуємо локальну копію
     const savedData = localStorage.getItem("game_config_data");
     if (savedData) {
         try {
@@ -83,30 +88,135 @@ function renderDoorsForm() {
 
         const card = document.createElement("div");
         card.className = "door-config-card";
-        card.style.cssText = "background: #333; padding: 15px; border-radius: 8px; border-left: 5px solid var(--accent-teal);";
+        card.style.cssText = "background: #333; padding: 15px; border-radius: 8px; border-left: 5px solid var(--accent-teal); position: relative;";
 
+        // type="text" для відповіді, щоб приймати і числа, і слова
         card.innerHTML = `
             <div style="margin-bottom: 10px; display: flex; justify-content: space-between;">
                 <strong style="font-size: 1.1em; color: #fff;">${templateItem.name}</strong>
-                <span style="font-size: 0.8em; color: #aaa; font-style: italic;">${templateItem.desc}</span>
+                <span style="font-size: 0.8em; color: #aaa;">${templateItem.desc}</span>
             </div>
-            <div style="display: flex; gap: 15px;">
+            <div style="display: flex; gap: 15px; align-items: flex-start;">
                 <div style="flex: 2;">
-                    <label style="font-size: 0.8em; color: #ccc;">Питання</label>
-                    <input type="text" class="inp-question" data-id="${templateItem.id}" value="${savedQ}" placeholder="5 * 5" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
+                    <label style="font-size: 0.8em; color: #ccc;">Питання (x, sin, sqrt...)</label>
+                    <input type="text" class="inp-question" data-id="${templateItem.id}" value="${savedQ}" placeholder="Напр: sin(x) = 0.5" 
+                           style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
                 </div>
                 <div style="flex: 1;">
                     <label style="font-size: 0.8em; color: #ccc;">Відповідь</label>
-                    <input type="number" class="inp-answer" data-id="${templateItem.id}" value="${savedA}" placeholder="25" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
+                    <input type="text" class="inp-answer" data-id="${templateItem.id}" value="${savedA}" placeholder="30" 
+                           style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
                 </div>
+            </div>
+            <div id="math-warning-${templateItem.id}" style="color: #f1c40f; font-size: 0.85em; margin-top: 5px; display: none;">
+                ⚠️ <span class="warn-text">...</span>
             </div>
         `;
 
         container.appendChild(card);
+
+        const qInput = card.querySelector(`.inp-question`);
+        const aInput = card.querySelector(`.inp-answer`);
+        
+        const validateMath = async () => {
+            const warningBox = card.querySelector(`#math-warning-${templateItem.id}`);
+            const warningText = warningBox.querySelector(".warn-text");
+            
+            let qVal = qInput.value.replace(/,/g, '.');
+            let aValRaw = aInput.value; 
+            
+            // 1. Авто-заміна: Українська 'х' -> Англійська 'x'
+            qVal = qVal.replace(/[хХ]/g, 'x'); 
+            
+            // 2. Авто-заміна: шкільний 'log' -> комп'ютерний 'log10'
+            // (але не ламаємо слова типу "logic")
+            qVal = qVal.replace(/\blog\(/g, 'log10(');
+
+            if (!qVal || !aValRaw) {
+                warningBox.style.display = "none";
+                return;
+            }
+
+            // Перевіряємо, чи відповідь є числом
+            const isAnswerNumeric = !isNaN(parseFloat(aValRaw.replace(',', '.'))) && isFinite(aValRaw.replace(',', '.'));
+
+            // Якщо відповідь ТЕКСТ ("Париж") — не перевіряємо математику
+            if (!isAnswerNumeric) {
+                warningBox.style.display = "none";
+                aInput.style.border = "1px solid #2ecc71";
+                return;
+            }
+
+            const answerNumber = parseFloat(aValRaw.replace(',', '.'));
+
+            try {
+                const math = await import('https://esm.run/mathjs');
+
+                // 🔥🔥🔥 НАЛАШТУВАННЯ ГРАДУСІВ 🔥🔥🔥
+                // Ми створюємо "свій" світ математики, де sin(30) = 0.5
+                const customScope = {
+                    x: answerNumber,
+                    // Перевизначаємо функції: якщо аргумент число — рахуємо як градуси
+                    sin: (a) => typeof a === 'number' ? math.sin(math.unit(a, 'deg')) : math.sin(a),
+                    cos: (a) => typeof a === 'number' ? math.cos(math.unit(a, 'deg')) : math.cos(a),
+                    tan: (a) => typeof a === 'number' ? math.tan(math.unit(a, 'deg')) : math.tan(a)
+                };
+
+                let isCorrect = false;
+                let calculatedValue = null;
+
+                // СЦЕНАРІЙ 1: Рівняння (=)
+                if (qVal.includes('=')) {
+                    const parts = qVal.split('=');
+                    if (parts.length === 2) {
+                        const leftSide = math.evaluate(parts[0], customScope);
+                        const rightSide = math.evaluate(parts[1], customScope);
+                        isCorrect = math.abs(leftSide - rightSide) < 0.01;
+                        
+                        if (!isCorrect) {
+                            warningText.innerHTML = `При x=${answerNumber}: Ліва (${math.round(leftSide, 2)}) ≠ Права (${math.round(rightSide, 2)})`;
+                        }
+                    }
+                } 
+                // СЦЕНАРІЙ 2: Вираз
+                else {
+                    calculatedValue = math.evaluate(qVal, customScope);
+                    isCorrect = math.abs(calculatedValue - answerNumber) < 0.01;
+
+                    if (!isCorrect) {
+                        warningText.innerHTML = `Ви ввели <b>${answerNumber}</b>, а результат: <b>${math.round(calculatedValue, 2)}</b>`;
+                    }
+                }
+
+                if (isCorrect) {
+                    warningBox.style.display = "none";
+                    aInput.style.border = "1px solid #2ecc71"; // Зелений
+                } else {
+                    warningBox.style.display = "block";
+                    aInput.style.border = "1px solid #e74c3c"; // Червоний
+                }
+
+            } catch (err) {
+                // Ігноруємо помилки (це може бути просто текст питання)
+                const hasMathSymbols = /[=+\-*/^]/.test(qVal);
+                if (hasMathSymbols && qVal.match(/[0-9x]/)) {
+                    console.warn("Math error:", err);
+                    warningText.innerHTML = `⚠️ <b>Помилка формули.</b> Перевірте дужки.`;
+                    warningBox.style.display = "block";
+                    aInput.style.border = "1px solid #f1c40f"; 
+                } else {
+                    warningBox.style.display = "none";
+                    aInput.style.border = "1px solid #2ecc71"; // Вважаємо текстом -> Зелений
+                }
+            }
+        };
+
+        qInput.addEventListener("input", validateMath);
+        aInput.addEventListener("input", validateMath);
     });
 }
 
-function saveConfiguration() {
+async function saveConfiguration() {
     const rewardInput = document.getElementById("maze-global-reward");
     mazeConfigData.reward = parseInt(rewardInput.value) || 100;
 
@@ -129,21 +239,35 @@ function saveConfiguration() {
 
     const finalExport = {
         ...mazeConfigData,
-        btnText: "Win"
+        btnText: "Win" 
     };
 
+    // 1. Локально
     localStorage.setItem("game_config_data", JSON.stringify(finalExport));
-    console.log("Saved for Unity:", finalExport);
 
+    // 2. Хмара
     const status = document.getElementById("maze-save-status");
     if(status) {
+        status.innerHTML = "⏳ Збереження в хмару...";
         status.style.display = "block";
-        setTimeout(() => status.style.display = "none", 3000);
+    }
+
+    try {
+        await setDoc(doc(db, "game_config", "maze_1"), finalExport);
+        console.log("Saved to Cloud:", finalExport);
+
+        if(status) {
+            status.innerHTML = "✅ Успішно збережено для всіх учнів!";
+            setTimeout(() => status.style.display = "none", 3000);
+        }
+    } catch (e) {
+        console.error("Помилка збереження в БД:", e);
+        if(status) status.innerHTML = "❌ Помилка збереження! Див. консоль.";
     }
 }
 
 // ==========================================
-// 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ
+// 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ (КЛАСИ)
 // ==========================================
 
 async function getUniqueClasses() {
@@ -183,7 +307,7 @@ export async function renderTeacherDashboard(containerId) {
         card.className = "class-card";
         card.innerHTML = `
             <h3>${className}</h3>
-            <p>Переглянути прогрес</p>
+            <p>Переглянути лідерборд та прогрес</p>
         `;
         card.addEventListener('click', () => { renderClassLeaderboard(className); });
         grid.appendChild(card);
@@ -204,12 +328,12 @@ async function renderClassLeaderboard(className) {
 
     container.innerHTML = `
         <div class="teacher-header">
-            <button id="btn-back-to-classes" class="btn btn-secondary">← Назад</button>
+            <button id="btn-back-to-classes" class="btn btn-secondary">← Назад до класів</button>
             <h2>🏆 Лідерборд: ${className}</h2>
             <p>Сортування за золотом.</p>
         </div>
         <table class="leaderboard-table">
-            <thead><tr><th>№</th><th>Ім'я</th><th>Золото</th><th>Дії</th></tr></thead>
+            <thead><tr><th>№</th><th>Ім'я</th><th>Золото 💰</th><th>Дії</th></tr></thead>
             <tbody id="class-leaderboard-body"></tbody>
         </table>
     `;
@@ -237,14 +361,16 @@ async function renderClassLeaderboard(className) {
         if (index === 2) rank = "🥉 3";
 
         tr.innerHTML = `
-            <td>${rank}</td>
-            <td>${student.name}</td>
-            <td>${student.profile.gold || 0} 💰</td>
-            <td><button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Результати</button></td>
+            <td class="rank-col">${rank}</td>
+            <td class="name-col">${student.name}</td>
+            <td class="gold-col">${student.profile.gold || 0} 💰</td>
+            <td class="action-col">
+                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Результати</button>
+            </td>
         `;
         tbody.appendChild(tr);
     });
-
+    
     setupProfileView(students);
 }
 
@@ -283,42 +409,59 @@ async function renderStudentProfile(student) {
     const goldDisplay = student.profile.gold || 0;
 
     container.innerHTML = `
-        <button id="btn-back-to-leaderboard" class="btn btn-secondary">← Назад</button>
-        <h1 style="text-align:center;">👤 ${student.name}</h1>
+        <div class="teacher-header" style="text-align: center;">
+            <button id="btn-back-to-leaderboard" class="btn btn-secondary" style="float: left;">← Назад до лідерборду</button>
+            <h2 style="font-size: 2em; margin-bottom: 5px;">👤 ПРОФІЛЬ УЧНЯ</h2>
+            <h1 style="color: var(--accent-gold); margin-top: 0; font-size: 2.5em;">${student.name}</h1>
+            <p style="margin-bottom: 30px;">Детальна інформація про прогрес та нагороди.</p>
+        </div>
 
         <div class="profile-dashboard-grid">
-            <div class="card" style="padding:20px;">
-                <h3>Основна інформація</h3>
-                <p><strong>Клас:</strong> ${student.className}</p>
-                <p><strong>Email:</strong> ${student.email}</p>
+            <div class="card profile-info-card" style="padding: 20px;">
+                <h3 style="color: var(--primary-color); border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px;">Основні Дані</h3>
+                <div class="info-line"><strong>🎓 Клас:</strong> ${student.className}</div>
+                <div class="info-line"><strong>📧 Email:</strong> ${student.email}</div>
             </div>
 
-            <div class="card" style="padding:20px;">
-                <h3>💰 Баланс</h3>
-                <p id="current-gold-display" style="font-size:2em; color:gold;">${goldDisplay} 💰</p>
-                <input type="number" id="gold-amount-input" placeholder="Нове значення" style="padding:5px;">
-                <button id="btn-update-gold" data-uid="${student.uid}" class="btn">Оновити золото</button>
-
-                <h3>🎁 Нагороди</h3>
-                <ul>${inventoryList}</ul>
+            <div class="card profile-rewards-card" style="padding: 20px;">
+                <h3 style="color: var(--accent-gold); text-align: center;">💰 Баланс Золота</h3>
+                <p id="current-gold-display" class="big-gold-amount" style="font-size: 3em; font-weight: bold; text-align: center; color: var(--accent-gold); margin-top: 0;">
+                    ${goldDisplay} 💰
+                </p>
+                <div class="gold-editor-controls" style="margin-bottom: 20px; text-align: center;">
+                    <input type="number" id="gold-amount-input" placeholder="Нова кількість" style="width: 50%; padding: 8px; margin-right: 5px; color: black; border-radius: 5px;">
+                    <button id="btn-update-gold" data-uid="${student.uid}" class="btn btn-sm" style="background-color: #f39c12; color: white; border:none; padding: 8px 15px; cursor: pointer;">Оновити</button>
+                </div>
+                <div style="border-top: 1px dashed #555; margin: 20px 0;"></div>
+                <h3 style="color: var(--primary-color); text-align: center;">🎁 Отримані Нагороди</h3>
+                <ul class="rewards-list" style="list-style-type: none; padding-left: 0;">${inventoryList}</ul>
             </div>
         </div>
     `;
 
-    document.getElementById("btn-back-to-leaderboard").onclick = () =>
-        renderClassLeaderboard(student.className);
+    document.getElementById("btn-update-gold").addEventListener('click', async () => {
+        const inputElement = document.getElementById("gold-amount-input");
+        const newGoldValue = parseInt(inputElement.value);
 
-    document.getElementById("btn-update-gold").onclick = async () => {
-        const newVal = parseInt(document.getElementById("gold-amount-input").value);
-        if (isNaN(newVal) || newVal < 0) return alert("Некоректне значення!");
+        if (isNaN(newGoldValue) || newGoldValue < 0) {
+            alert("Будь ласка, введіть дійсне додатне число для золота.");
+            return;
+        }
 
         try {
-            await updateDoc(doc(db, "users", student.uid), { "profile.gold": newVal });
-            document.getElementById("current-gold-display").innerHTML = `${newVal} 💰`;
-            alert("Золото оновлено!");
-        } catch {
-            alert("Помилка оновлення.");
+            const studentRef = doc(db, "users", student.uid);
+            await updateDoc(studentRef, { "profile.gold": newGoldValue });
+            document.getElementById("current-gold-display").innerHTML = `${newGoldValue} 💰`;
+            inputElement.value = ''; 
+            alert(`Золото учня ${student.name} успішно оновлено до ${newGoldValue}.`);
+        } catch (error) {
+            console.error("Помилка оновлення золота:", error);
+            alert("Помилка при оновленні золота.");
         }
+    });
+    
+    document.getElementById("btn-back-to-leaderboard").onclick = () => {
+        renderClassLeaderboard(student.className); 
     };
 }
 
@@ -331,46 +474,79 @@ async function renderTreasureEditor() {
     if (!container) return;
 
     container.innerHTML = `
-        <h2 style="text-align:center; font-size:2em; color:gold;">💎 Ціни Скарбниці</h2>
-        <div class="category-grid">
-            <div class="editor-category-block"><h3>Мікро</h3><div id="teacher-rewards-micro"></div></div>
-            <div class="editor-category-block"><h3>Середні</h3><div id="teacher-rewards-medium"></div></div>
-            <div class="editor-category-block"><h3>Великі</h3><div id="teacher-rewards-large"></div></div>
+        <div class="teacher-header" style="text-align: center;">
+            <h2 style="font-size: 2.5em; color: var(--accent-gold);">💎 РЕДАГУВАННЯ ЦІН СКАРБНИЦІ</h2>
+            <p style="margin-bottom: 30px;">Тут ви можете змінювати ціни на нагороди для учнів.</p>
+        </div>
+        <div class="category-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
+            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
+                <h3 style="color: #2ecc71; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Мікро-нагороди</h3>
+                <div id="teacher-rewards-micro" class="rewards-editor-list"></div>
+            </div>
+            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
+                <h3 style="color: #3498db; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Середні нагороди</h3>
+                <div id="teacher-rewards-medium" class="rewards-editor-list"></div>
+            </div>
+            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
+                <h3 style="color: #9b59b6; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Великі нагороди</h3>
+                <div id="teacher-rewards-large" class="rewards-editor-list"></div>
+            </div>
         </div>
     `;
 
-    const items = getShopItems();
-    renderCategory("teacher-rewards-micro", items.micro);
-    renderCategory("teacher-rewards-medium", items.medium);
-    renderCategory("teacher-rewards-large", items.large);
+    try {
+        const items = getShopItems(); 
+        renderCategory("teacher-rewards-micro", items.micro);
+        renderCategory("teacher-rewards-medium", items.medium);
+        renderCategory("teacher-rewards-large", items.large);
+    } catch (e) {
+        console.error("Помилка завантаження товарів:", e);
+    }
 }
 
 function renderCategory(containerId, itemList) {
     const container = document.getElementById(containerId);
     if (!container) return;
-
-    container.innerHTML = "";
+    container.innerHTML = ""; 
 
     itemList.forEach(item => {
         const div = document.createElement("div");
         div.className = "shop-item";
-        div.style = "background:#2c3e50; padding:10px; margin-bottom:10px; border-radius:5px;";
+        div.style.background = "#2c3e50"; 
+        div.style.border = "1px solid #34495e";
+        div.style.borderRadius = "8px";
+        div.style.padding = "10px";
+        div.style.marginBottom = "15px";
 
         div.innerHTML = `
-            <p><strong>${item.name}</strong></p>
-            <p style="font-size:0.9em;">${item.desc}</p>
-            <input type="number" id="price-${item.id}" value="${item.price}" style="width:80px;">
-            <button class="btn-save-price" data-id="${item.id}">💾 Зберегти</button>
+            <div class="shop-item-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <div class="item-name" style="color: #ecf0f1; font-weight: bold;">${item.name}</div>
+                <div style="width: 50%; text-align: right; display: flex; align-items: center; justify-content: flex-end;">
+                    <input type="number" id="price-${item.id}" value="${item.price}" 
+                           style="width: 70px; padding: 5px; background: #34495e; color: #f1c40f; border: 1px solid #555; border-radius: 5px; text-align: center; margin-right: 5px;">
+                    <span style="color: #f1c40f;">💰</span>
+                </div>
+            </div>
+            <div class="item-desc" style="margin-bottom: 10px; font-size: 0.8rem; color: #bdc3c7;">${item.desc}</div>
+            <button class="btn-save-price" data-id="${item.id}" 
+                    style="width: 100%; padding: 8px; background: #27ae60; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; text-transform: uppercase;">
+                💾 Зберегти ціну
+            </button>
         `;
 
-        div.querySelector(".btn-save-price").onclick = () => {
-            const newPrice = parseInt(document.getElementById(`price-${item.id}`).value);
-            if (isNaN(newPrice) || newPrice < 0) return alert("Некоректне число!");
+        const btn = div.querySelector(".btn-save-price");
+        btn.onclick = () => {
+            const input = document.getElementById(`price-${item.id}`);
+            const newPrice = parseInt(input.value);
+            if (isNaN(newPrice) || newPrice < 0) { alert("Некоректне число."); return; }
 
-            updateItemPrice(item.id, newPrice);
-            alert("Ціну оновлено!");
+            const success = updateItemPrice(item.id, newPrice);
+            if (success) {
+                alert(`Ціну на "${item.name}" оновлено до ${newPrice}!`);
+                btn.style.backgroundColor = "#1abc9c"; 
+                setTimeout(() => btn.style.backgroundColor = "#27ae60", 1000);
+            }
         };
-
         container.appendChild(div);
     });
 }
