@@ -1,6 +1,7 @@
 // src/teacherPanel.js
 
 import { db } from "./firebase.js";
+import { getCurrentUser } from "./auth.js"; // 🔥 Критично важливий імпорт
 import { 
     collection, 
     getDocs, 
@@ -26,14 +27,256 @@ export function initTeacherPanel() {
         renderTreasureEditor();
     }, 100); 
 
-    // 3. Редактор Лабіринту (НОВИЙ)
+    // 3. Редактор Лабіринту
     setTimeout(() => {
         initMazeEditor();
     }, 100);
 }
 
 // ==========================================
-// 🧩 ЛАБІРИНТ — ЛОГІКА РЕДАКТОРА
+// 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ (КЛАСИ)
+// ==========================================
+
+// Отримати класи, які належать ЦЬОМУ вчителю
+async function getUniqueClasses(teacherId) {
+    // 🔥 Фільтруємо: тільки учні, у яких teacherUid співпадає з ID цього вчителя
+    const q = query(
+        collection(db, "users"),
+        where("role", "==", "student"),
+        where("teacherUid", "==", teacherId) 
+    );
+
+    const usersSnapshot = await getDocs(q);
+    
+    const classes = new Set(); 
+    let studentCount = 0;
+
+    usersSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.className) {
+            classes.add(data.className);
+            studentCount++;
+        }
+    });
+    
+    return { classes: Array.from(classes), totalStudents: studentCount }; 
+}
+
+export async function renderTeacherDashboard(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    // Беремо короткий код, якщо є, інакше UID
+    const myDisplayId = currentUser.teacherCode || currentUser.uid;
+    const myUid = currentUser.uid;
+
+    const { classes, totalStudents } = await getUniqueClasses(myUid);
+
+    container.innerHTML = `
+        <div class="teacher-header">
+            <h2>📚 Мої класи</h2>
+            <div style="background: #333; padding: 15px; border-radius: 8px; border: 2px solid var(--accent-gold); display: inline-block; margin-top: 10px; text-align: center;">
+                <span style="color: #aaa; font-size: 0.9em;">Ваш ID для учнів:</span><br>
+                <strong style="color: #fff; font-family: monospace; font-size: 2em; letter-spacing: 3px;">${myDisplayId}</strong>
+            </div>
+            <p style="margin-top: 10px;">Всього учнів у вашій групі: ${totalStudents}</p>
+        </div>
+        <div id="class-cards" class="class-grid"></div>
+    `;
+    
+    const grid = document.getElementById("class-cards");
+    
+    classes.forEach(className => {
+        const card = document.createElement("div");
+        card.className = "class-card";
+        card.innerHTML = `
+            <h3>${className}</h3>
+            <p>Переглянути успішність</p>
+        `;
+        card.addEventListener('click', () => { renderClassLeaderboard(className); });
+        grid.appendChild(card);
+    });
+
+    if (classes.length === 0) {
+        grid.innerHTML = '<p style="text-align: center; margin-top: 30px;">У вас ще немає зареєстрованих учнів.</p>';
+    }
+}
+
+// ==========================================
+// 🏆 ЛІДЕРБОРД КЛАСУ
+// ==========================================
+
+async function renderClassLeaderboard(className) {
+    const container = document.getElementById("teacher-content");
+    if (!container) return;
+
+    const currentUser = getCurrentUser();
+
+    container.innerHTML = `
+        <div class="teacher-header">
+            <button id="btn-back-to-classes" class="btn btn-secondary">← Назад до класів</button>
+            <h2>🏆 Лідерборд: ${className}</h2>
+        </div>
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Ім'я</th>
+                    <th>Золото 💰</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody id="class-leaderboard-body"></tbody>
+        </table>
+    `;
+
+    document.getElementById("btn-back-to-classes").onclick = () => {
+        renderTeacherDashboard("teacher-content"); 
+    };
+
+    const tbody = document.getElementById("class-leaderboard-body");
+    
+    // Запит з фільтрацією по вчителю і класу
+    const q = query(
+        collection(db, "users"),
+        where("role", "==", "student"),
+        where("className", "==", className),
+        where("teacherUid", "==", currentUser.uid), 
+        orderBy("profile.gold", "desc")
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const students = [];
+    querySnapshot.forEach(doc => {
+        students.push({ ...doc.data(), uid: doc.id }); 
+    });
+
+    students.forEach((student, index) => {
+        const tr = document.createElement("tr");
+        
+        let rankDisplay = index + 1;
+        if (index === 0) rankDisplay = "🥇 1";
+        if (index === 1) rankDisplay = "🥈 2";
+        if (index === 2) rankDisplay = "🥉 3";
+
+        tr.innerHTML = `
+            <td class="rank-col">${rankDisplay}</td>
+            <td class="name-col">${student.name}</td>
+            <td class="gold-col">${student.profile.gold || 0} 💰</td>
+            <td class="action-col">
+                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Профіль</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    setupProfileView(students);
+}
+
+// ==========================================
+// 👤 ПРОФІЛЬ УЧНЯ
+// ==========================================
+
+function setupProfileView(students) {
+    document.querySelectorAll('.btn-view-profile').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const studentUid = e.target.dataset.uid;
+            const student = students.find(s => s.uid === studentUid);
+            
+            if (student) {
+                renderStudentProfile(student);
+            } else {
+                alert("Помилка: Дані учня не знайдено!");
+            }
+        });
+    });
+}
+
+async function renderStudentProfile(student) {
+    const container = document.getElementById("teacher-content");
+    if (!container) return;
+
+    const inventory = student.profile.inventory || [];
+    
+    const stackedInventory = inventory.reduce((acc, item) => {
+        const itemName = item.name || 'Нагорода';
+        acc[itemName] = (acc[itemName] || 0) + 1;
+        return acc;
+    }, {});
+    
+    const inventoryKeys = Object.keys(stackedInventory);
+    const inventoryList = inventoryKeys.length > 0
+        ? inventoryKeys.map(name => {
+            const count = stackedInventory[name];
+            const countText = count > 1 ? ` (x${count})` : '';
+            return `<li>${name}${countText}</li>`;
+        }).join('')
+        : '<li>Нагороди ще не придбані.</li>';
+        
+    let goldDisplay = student.profile.gold || 0; 
+
+    container.innerHTML = `
+        <div class="teacher-header" style="text-align: center;">
+            <button id="btn-back-to-leaderboard" class="btn btn-secondary" style="float: left;">← Назад до лідерборду</button>
+            <h2 style="font-size: 2em; margin-bottom: 5px;">👤 ПРОФІЛЬ УЧНЯ</h2>
+            <h1 style="color: var(--accent-gold); margin-top: 0; font-size: 2.5em;">${student.name}</h1>
+            <p style="margin-bottom: 30px;">ID: <span style="font-family: monospace;">${student.loginID || "N/A"}</span></p>
+        </div>
+
+        <div class="profile-dashboard-grid">
+            <div class="card profile-info-card" style="padding: 20px;">
+                <h3 style="color: var(--primary-color); border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px;">Основні Дані</h3>
+                <div class="info-line"><strong>🎓 Клас:</strong> ${student.className}</div>
+                <div class="info-line"><strong>📧 Логін/Email:</strong> ${student.loginID || student.email}</div>
+            </div>
+
+            <div class="card profile-rewards-card" style="padding: 20px;">
+                <h3 style="color: var(--accent-gold); text-align: center;">💰 Баланс Золота</h3>
+                <p id="current-gold-display" class="big-gold-amount" style="font-size: 3em; font-weight: bold; text-align: center; color: var(--accent-gold); margin-top: 0;">
+                    ${goldDisplay} 💰
+                </p>
+                <div class="gold-editor-controls" style="margin-bottom: 20px; text-align: center;">
+                    <input type="number" id="gold-amount-input" placeholder="Нова кількість" style="width: 50%; padding: 8px; margin-right: 5px; color: black; border-radius: 5px;">
+                    <button id="btn-update-gold" data-uid="${student.uid}" class="btn btn-sm" style="background-color: #f39c12; color: white; border:none; padding: 8px 15px; cursor: pointer;">Оновити</button>
+                </div>
+                <div style="border-top: 1px dashed #555; margin: 20px 0;"></div>
+                <h3 style="color: var(--primary-color); text-align: center;">🎁 Інвентар</h3>
+                <ul class="rewards-list" style="list-style-type: none; padding-left: 0;">${inventoryList}</ul>
+            </div>
+        </div>
+    `;
+
+    document.getElementById("btn-update-gold").addEventListener('click', async () => {
+        const inputElement = document.getElementById("gold-amount-input");
+        const newGoldValue = parseInt(inputElement.value);
+
+        if (isNaN(newGoldValue) || newGoldValue < 0) {
+            alert("Введіть коректне число.");
+            return;
+        }
+
+        try {
+            const studentRef = doc(db, "users", student.uid);
+            await updateDoc(studentRef, { "profile.gold": newGoldValue });
+            document.getElementById("current-gold-display").innerHTML = `${newGoldValue} 💰`;
+            inputElement.value = ''; 
+            alert(`Баланс оновлено!`);
+        } catch (error) {
+            console.error("Помилка:", error);
+            alert("Помилка оновлення.");
+        }
+    });
+    
+    document.getElementById("btn-back-to-leaderboard").onclick = () => {
+        renderClassLeaderboard(student.className); 
+    };
+}
+
+// ==========================================
+// 🧩 РЕДАКТОР ЛАБІРИНТУ (З ВАЛІДАЦІЄЮ)
 // ==========================================
 
 const LEVEL_TEMPLATE = [
@@ -50,19 +293,15 @@ let mazeConfigData = {
 function initMazeEditor() {
     console.log("Maze Editor: Init");
 
-    // Завантажуємо локальну копію
     const savedData = localStorage.getItem("game_config_data");
     if (savedData) {
         try {
             const parsed = JSON.parse(savedData);
             mazeConfigData = { ...mazeConfigData, ...parsed };
-            
             if (document.getElementById("maze-global-reward")) {
                 document.getElementById("maze-global-reward").value = mazeConfigData.reward;
             }
-        } catch (e) {
-            console.error("Помилка читання конфігу", e);
-        }
+        } catch (e) { console.error(e); }
     }
 
     renderDoorsForm();
@@ -90,7 +329,7 @@ function renderDoorsForm() {
         card.className = "door-config-card";
         card.style.cssText = "background: #333; padding: 15px; border-radius: 8px; border-left: 5px solid var(--accent-teal); position: relative;";
 
-        // type="text" для відповіді, щоб приймати і числа, і слова
+        // text/text для гнучкості (числа або слова)
         card.innerHTML = `
             <div style="margin-bottom: 10px; display: flex; justify-content: space-between;">
                 <strong style="font-size: 1.1em; color: #fff;">${templateItem.name}</strong>
@@ -98,13 +337,13 @@ function renderDoorsForm() {
             </div>
             <div style="display: flex; gap: 15px; align-items: flex-start;">
                 <div style="flex: 2;">
-                    <label style="font-size: 0.8em; color: #ccc;">Питання (x, sin, sqrt...)</label>
-                    <input type="text" class="inp-question" data-id="${templateItem.id}" value="${savedQ}" placeholder="Напр: sin(x) = 0.5" 
+                    <label style="font-size: 0.8em; color: #ccc;">Питання (формула або текст)</label>
+                    <input type="text" class="inp-question" data-id="${templateItem.id}" value="${savedQ}" placeholder="Напр: sin(x)=0.5 або 'Столиця?'" 
                            style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
                 </div>
                 <div style="flex: 1;">
                     <label style="font-size: 0.8em; color: #ccc;">Відповідь</label>
-                    <input type="text" class="inp-answer" data-id="${templateItem.id}" value="${savedA}" placeholder="30" 
+                    <input type="text" class="inp-answer" data-id="${templateItem.id}" value="${savedA}" placeholder="30 або Київ" 
                            style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;">
                 </div>
             </div>
@@ -125,22 +364,17 @@ function renderDoorsForm() {
             let qVal = qInput.value.replace(/,/g, '.');
             let aValRaw = aInput.value; 
             
-            // 1. Авто-заміна: Українська 'х' -> Англійська 'x'
-            qVal = qVal.replace(/[хХ]/g, 'x'); 
-            
-            // 2. Авто-заміна: шкільний 'log' -> комп'ютерний 'log10'
-            // (але не ламаємо слова типу "logic")
-            qVal = qVal.replace(/\blog\(/g, 'log10(');
+            // Авто-заміни для зручності
+            qVal = qVal.replace(/[хХ]/g, 'x'); // Кирилиця
+            qVal = qVal.replace(/\blog\(/g, 'log10('); // log10
 
             if (!qVal || !aValRaw) {
                 warningBox.style.display = "none";
                 return;
             }
 
-            // Перевіряємо, чи відповідь є числом
+            // Якщо відповідь ТЕКСТ (не число) - вважаємо правильним (зеленим)
             const isAnswerNumeric = !isNaN(parseFloat(aValRaw.replace(',', '.'))) && isFinite(aValRaw.replace(',', '.'));
-
-            // Якщо відповідь ТЕКСТ ("Париж") — не перевіряємо математику
             if (!isAnswerNumeric) {
                 warningBox.style.display = "none";
                 aInput.style.border = "1px solid #2ecc71";
@@ -152,11 +386,9 @@ function renderDoorsForm() {
             try {
                 const math = await import('https://esm.run/mathjs');
 
-                // 🔥🔥🔥 НАЛАШТУВАННЯ ГРАДУСІВ 🔥🔥🔥
-                // Ми створюємо "свій" світ математики, де sin(30) = 0.5
+                // Налаштування для градусів
                 const customScope = {
                     x: answerNumber,
-                    // Перевизначаємо функції: якщо аргумент число — рахуємо як градуси
                     sin: (a) => typeof a === 'number' ? math.sin(math.unit(a, 'deg')) : math.sin(a),
                     cos: (a) => typeof a === 'number' ? math.cos(math.unit(a, 'deg')) : math.cos(a),
                     tan: (a) => typeof a === 'number' ? math.tan(math.unit(a, 'deg')) : math.tan(a)
@@ -165,7 +397,7 @@ function renderDoorsForm() {
                 let isCorrect = false;
                 let calculatedValue = null;
 
-                // СЦЕНАРІЙ 1: Рівняння (=)
+                // 1. Рівняння (=)
                 if (qVal.includes('=')) {
                     const parts = qVal.split('=');
                     if (parts.length === 2) {
@@ -178,7 +410,7 @@ function renderDoorsForm() {
                         }
                     }
                 } 
-                // СЦЕНАРІЙ 2: Вираз
+                // 2. Вираз
                 else {
                     calculatedValue = math.evaluate(qVal, customScope);
                     isCorrect = math.abs(calculatedValue - answerNumber) < 0.01;
@@ -190,14 +422,14 @@ function renderDoorsForm() {
 
                 if (isCorrect) {
                     warningBox.style.display = "none";
-                    aInput.style.border = "1px solid #2ecc71"; // Зелений
+                    aInput.style.border = "1px solid #2ecc71"; 
                 } else {
                     warningBox.style.display = "block";
-                    aInput.style.border = "1px solid #e74c3c"; // Червоний
+                    aInput.style.border = "1px solid #e74c3c"; 
                 }
 
             } catch (err) {
-                // Ігноруємо помилки (це може бути просто текст питання)
+                // Якщо це не схоже на математику, ігноруємо помилки
                 const hasMathSymbols = /[=+\-*/^]/.test(qVal);
                 if (hasMathSymbols && qVal.match(/[0-9x]/)) {
                     console.warn("Math error:", err);
@@ -206,7 +438,7 @@ function renderDoorsForm() {
                     aInput.style.border = "1px solid #f1c40f"; 
                 } else {
                     warningBox.style.display = "none";
-                    aInput.style.border = "1px solid #2ecc71"; // Вважаємо текстом -> Зелений
+                    aInput.style.border = "1px solid #2ecc71"; 
                 }
             }
         };
@@ -230,7 +462,7 @@ async function saveConfiguration() {
             newDoorsData.push({
                 id: tpl.id,
                 question: qInput.value.trim() || "???",
-                answer: parseInt(aInput.value) || 0
+                answer: aInput.value // Зберігаємо як рядок для підтримки тексту
             });
         }
     });
@@ -264,205 +496,6 @@ async function saveConfiguration() {
         console.error("Помилка збереження в БД:", e);
         if(status) status.innerHTML = "❌ Помилка збереження! Див. консоль.";
     }
-}
-
-// ==========================================
-// 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ (КЛАСИ)
-// ==========================================
-
-async function getUniqueClasses() {
-    const usersSnapshot = await getDocs(collection(db, "users"));
-    const classes = new Set(); 
-    let studentCount = 0;
-
-    usersSnapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.role === "student" && data.className) {
-            classes.add(data.className);
-            studentCount++;
-        }
-    });
-    
-    return { classes: Array.from(classes), totalStudents: studentCount }; 
-}
-
-export async function renderTeacherDashboard(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const { classes, totalStudents } = await getUniqueClasses();
-
-    container.innerHTML = `
-        <div class="teacher-header">
-            <h2>📚 Мої класи</h2>
-            <p>Всього учнів у системі: ${totalStudents}</p>
-        </div>
-        <div id="class-cards" class="class-grid"></div>
-    `;
-    
-    const grid = document.getElementById("class-cards");
-    
-    classes.forEach(className => {
-        const card = document.createElement("div");
-        card.className = "class-card";
-        card.innerHTML = `
-            <h3>${className}</h3>
-            <p>Переглянути лідерборд та прогрес</p>
-        `;
-        card.addEventListener('click', () => { renderClassLeaderboard(className); });
-        grid.appendChild(card);
-    });
-
-    if (classes.length === 0) {
-        grid.innerHTML = '<p style="text-align: center; margin-top: 30px;">У системі ще немає учнів.</p>';
-    }
-}
-
-// ==========================================
-// 🏆 ЛІДЕРБОРД КЛАСУ
-// ==========================================
-
-async function renderClassLeaderboard(className) {
-    const container = document.getElementById("teacher-content");
-    if (!container) return;
-
-    container.innerHTML = `
-        <div class="teacher-header">
-            <button id="btn-back-to-classes" class="btn btn-secondary">← Назад до класів</button>
-            <h2>🏆 Лідерборд: ${className}</h2>
-            <p>Сортування за золотом.</p>
-        </div>
-        <table class="leaderboard-table">
-            <thead><tr><th>№</th><th>Ім'я</th><th>Золото 💰</th><th>Дії</th></tr></thead>
-            <tbody id="class-leaderboard-body"></tbody>
-        </table>
-    `;
-
-    document.getElementById("btn-back-to-classes").onclick = () => renderTeacherDashboard("teacher-content");
-
-    const tbody = document.getElementById("class-leaderboard-body");
-
-    const q = query(
-        collection(db, "users"),
-        where("role", "==", "student"),
-        where("className", "==", className),
-        orderBy("profile.gold", "desc")
-    );
-    
-    const querySnapshot = await getDocs(q);
-    const students = [];
-    querySnapshot.forEach(doc => students.push({ ...doc.data(), uid: doc.id }));
-
-    students.forEach((student, index) => {
-        const tr = document.createElement("tr");
-        let rank = index + 1;
-        if (index === 0) rank = "🥇 1";
-        if (index === 1) rank = "🥈 2";
-        if (index === 2) rank = "🥉 3";
-
-        tr.innerHTML = `
-            <td class="rank-col">${rank}</td>
-            <td class="name-col">${student.name}</td>
-            <td class="gold-col">${student.profile.gold || 0} 💰</td>
-            <td class="action-col">
-                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Результати</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-    
-    setupProfileView(students);
-}
-
-// ==========================================
-// 👤 ПРОФІЛЬ УЧНЯ
-// ==========================================
-
-function setupProfileView(students) {
-    document.querySelectorAll('.btn-view-profile').forEach(button => {
-        button.addEventListener('click', e => {
-            const studentUid = e.target.dataset.uid;
-            const student = students.find(s => s.uid === studentUid);
-
-            if (student) renderStudentProfile(student);
-            else alert("Помилка: дані учня не знайдені!");
-        });
-    });
-}
-
-async function renderStudentProfile(student) {
-    const container = document.getElementById("teacher-content");
-    if (!container) return;
-
-    const inventory = student.profile.inventory || [];
-    const stackedInventory = inventory.reduce((acc, item) => {
-        const itemName = item.name || "Нагорода";
-        acc[itemName] = (acc[itemName] || 0) + 1;
-        return acc;
-    }, {});
-
-    const inventoryList = Object.keys(stackedInventory).length
-        ? Object.keys(stackedInventory)
-            .map(x => `<li>${x} ${stackedInventory[x] > 1 ? `(x${stackedInventory[x]})` : ""}</li>`).join("")
-        : "<li>Немає нагород</li>";
-
-    const goldDisplay = student.profile.gold || 0;
-
-    container.innerHTML = `
-        <div class="teacher-header" style="text-align: center;">
-            <button id="btn-back-to-leaderboard" class="btn btn-secondary" style="float: left;">← Назад до лідерборду</button>
-            <h2 style="font-size: 2em; margin-bottom: 5px;">👤 ПРОФІЛЬ УЧНЯ</h2>
-            <h1 style="color: var(--accent-gold); margin-top: 0; font-size: 2.5em;">${student.name}</h1>
-            <p style="margin-bottom: 30px;">Детальна інформація про прогрес та нагороди.</p>
-        </div>
-
-        <div class="profile-dashboard-grid">
-            <div class="card profile-info-card" style="padding: 20px;">
-                <h3 style="color: var(--primary-color); border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px;">Основні Дані</h3>
-                <div class="info-line"><strong>🎓 Клас:</strong> ${student.className}</div>
-                <div class="info-line"><strong>📧 Email:</strong> ${student.email}</div>
-            </div>
-
-            <div class="card profile-rewards-card" style="padding: 20px;">
-                <h3 style="color: var(--accent-gold); text-align: center;">💰 Баланс Золота</h3>
-                <p id="current-gold-display" class="big-gold-amount" style="font-size: 3em; font-weight: bold; text-align: center; color: var(--accent-gold); margin-top: 0;">
-                    ${goldDisplay} 💰
-                </p>
-                <div class="gold-editor-controls" style="margin-bottom: 20px; text-align: center;">
-                    <input type="number" id="gold-amount-input" placeholder="Нова кількість" style="width: 50%; padding: 8px; margin-right: 5px; color: black; border-radius: 5px;">
-                    <button id="btn-update-gold" data-uid="${student.uid}" class="btn btn-sm" style="background-color: #f39c12; color: white; border:none; padding: 8px 15px; cursor: pointer;">Оновити</button>
-                </div>
-                <div style="border-top: 1px dashed #555; margin: 20px 0;"></div>
-                <h3 style="color: var(--primary-color); text-align: center;">🎁 Отримані Нагороди</h3>
-                <ul class="rewards-list" style="list-style-type: none; padding-left: 0;">${inventoryList}</ul>
-            </div>
-        </div>
-    `;
-
-    document.getElementById("btn-update-gold").addEventListener('click', async () => {
-        const inputElement = document.getElementById("gold-amount-input");
-        const newGoldValue = parseInt(inputElement.value);
-
-        if (isNaN(newGoldValue) || newGoldValue < 0) {
-            alert("Будь ласка, введіть дійсне додатне число для золота.");
-            return;
-        }
-
-        try {
-            const studentRef = doc(db, "users", student.uid);
-            await updateDoc(studentRef, { "profile.gold": newGoldValue });
-            document.getElementById("current-gold-display").innerHTML = `${newGoldValue} 💰`;
-            inputElement.value = ''; 
-            alert(`Золото учня ${student.name} успішно оновлено до ${newGoldValue}.`);
-        } catch (error) {
-            console.error("Помилка оновлення золота:", error);
-            alert("Помилка при оновленні золота.");
-        }
-    });
-    
-    document.getElementById("btn-back-to-leaderboard").onclick = () => {
-        renderClassLeaderboard(student.className); 
-    };
 }
 
 // ==========================================

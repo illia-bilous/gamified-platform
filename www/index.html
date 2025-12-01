@@ -39,8 +39,8 @@
             <button id="btn-back-auth1" class="btn back-btn">← Назад</button>
             <h2>Вхід</h2>
             <form id="login-form" autocomplete="off">
-                <label for="login-email">Email:</label>
-                <input type="email" id="login-email" required>
+                <label for="login-email">Email або Логін учня:</label>
+                <input type="text" id="login-email" required>
 
                 <label for="login-pass">Пароль:</label>
                 <input type="password" id="login-pass" required>
@@ -57,27 +57,35 @@
 
             <div id="register-form-content">
                 <form id="register-form" autocomplete="off">
-                    <label for="reg-name">Ім'я та Прізвище:</label>
-                    <input type="text" id="reg-name" required>
+                    <label for="reg-name">Прізвище та Ім'я:</label>
+                    <input type="text" id="reg-name" required placeholder="Напр: Шевченко Тарас">
 
-                    <label for="reg-email">Email:</label>
-                    <input type="email" id="reg-email" required>
+                    <div id="email-field-group">
+                        <label for="reg-email">Email:</label>
+                        <input type="email" id="reg-email">
+                    </div>
 
-                    <label for="reg-pass">Пароль (мін. 6 символів):</label>
+                    <label for="reg-pass">Пароль:</label>
                     <input type="password" id="reg-pass" required>
 
                     <div id="select-class-wrapper">
                         <label for="reg-class">Оберіть ваш клас:</label>
                         <select id="reg-class" required>
                             <option value="">-- Оберіть --</option>
-                            <option value="8А">8-А</option>
-                            <option value="8Б">8-Б</option>
-                            <option value="8В">8-В</option>
+                            <option value="8-А">8-А</option>
+                            <option value="8-Б">8-Б</option>
+                            <option value="8-В">8-В</option>
+                            <option value="8-Г">8-Г</option>
                         </select>
                     </div>
 
+                    <div id="student-teacher-id-block" class="hidden">
+                        <label for="reg-student-teacher-id">ID Вчителя (напр. she_tar_55):</label>
+                        <input type="text" id="reg-student-teacher-id" placeholder="Введіть код, який дав вчитель">
+                    </div>
+
                     <div id="register-teacher-key" class="hidden">
-                        <label for="teacher-key">Код доступу викладача:</label>
+                        <label for="teacher-key">Ключ Адміністратора:</label>
                         <input type="password" id="teacher-key">
                     </div>
 
@@ -85,9 +93,10 @@
                 </form>
             </div>
 
-            <div id="register-success" class="card success hidden">
-                <h3>Успішна реєстрація!</h3>
-                <p>Ваш обліковий запис створено. Тепер ви можете увійти.</p>
+            <div id="register-success" class="card success hidden" style="text-align: center;">
+                <h3 style="color: #2ecc71;">✅ Успіх!</h3>
+                <div id="new-login-display" style="background: #333; padding: 15px; margin: 20px 0; border-radius: 8px; border: 2px dashed #f1c40f;">
+                    </div>
                 <button id="btn-go-to-login" class="btn secondary">Перейти до входу</button>
             </div>
         </div>
