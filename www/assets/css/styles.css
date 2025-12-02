@@ -746,61 +746,102 @@ label {
 
 /* --- СТИЛІ ЛІДЕРБОРДУ --- */
 
-/* Базовий стиль рядка */
+.leaderboard-table {
+    width: 100%;
+    border-collapse: separate; 
+    border-spacing: 0 12px;    
+}
+
+/* 1. Базовий вигляд рядка (чужий) */
 .leaderboard-table tr {
-    transition: all 0.3s ease;
-    border-radius: 8px;
+    background-color: #252525;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 8px; /* Заокруглення */
+    
+    /* Хитрість: щоб бордер був на всьому рядку */
+    border: 1px solid rgba(255,255,255,0.05); 
 }
 
-/* 🥇 1 Місце - ЗОЛОТО */
-tr.rank-1 {
-    background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
-    border-left: 4px solid #FFD700;
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
-}
-tr.rank-1 td.rank-col {
-    font-size: 1.5em; /* Трохи більша іконка */
-    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-}
-
-/* 🥈 2 Місце - СРІБЛО */
-tr.rank-2 {
-    background: linear-gradient(90deg, rgba(192, 192, 192, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
-    border-left: 4px solid #C0C0C0;
-    box-shadow: 0 0 15px rgba(192, 192, 192, 0.2);
-}
-tr.rank-2 td.rank-col {
-    font-size: 1.3em;
-    text-shadow: 0 0 10px rgba(192, 192, 192, 0.5);
-}
-
-/* 🥉 3 Місце - БРОНЗА */
-tr.rank-3 {
-    background: linear-gradient(90deg, rgba(205, 127, 50, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
-    border-left: 4px solid #CD7F32;
-    box-shadow: 0 0 15px rgba(205, 127, 50, 0.2);
-}
-tr.rank-3 td.rank-col {
-    font-size: 1.2em;
-    text-shadow: 0 0 10px rgba(205, 127, 50, 0.5);
-}
-
-/* 🔹 Інші місця - СИНІЙ (стандарт) */
-tr.rank-other {
-    background: linear-gradient(90deg, rgba(52, 152, 219, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
-    border-left: 4px solid #3498db;
-}
-
-/* 🟢 ЦЕ Я (Поточний користувач) */
-/* Цей клас додається ПОВЕРХ золотого/срібного */
-tr.is-current-user {
-    border: 2px solid #2ecc71 !important; /* Яскрава зелена рамка */
-    box-shadow: 0 0 15px rgba(46, 204, 113, 0.3) inset; /* Внутрішнє зелене світіння */
-    background-color: rgba(46, 204, 113, 0.1); /* Легкий зелений відтінок */
-}
-
-/* Щоб текст не зливався */
+/* Стилі комірок */
 .leaderboard-table td {
-    padding: 12px 15px;
-    vertical-align: middle;
+    padding: 15px;
+    border: none; /* Прибираємо старі рамки */
+}
+/* Заокруглення кутів рядка */
+.leaderboard-table tr td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.leaderboard-table tr td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+
+
+/* --- СТИЛІ ДЛЯ ЧУЖИХ (Звичайні градієнти) --- */
+
+/* 🥇 1 Місце (Чужий) */
+tr.rank-1 {
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, #252525 100%);
+    border-left: 4px solid #FFD700; /* Лише зліва */
+}
+tr.rank-1 td.rank-col { font-size: 1.5em; text-shadow: 0 0 10px #FFD700; }
+
+/* 🥈 2 Місце (Чужий) */
+tr.rank-2 {
+    background: linear-gradient(90deg, rgba(192, 192, 192, 0.15) 0%, #252525 100%);
+    border-left: 4px solid #C0C0C0;
+}
+tr.rank-2 td.rank-col { font-size: 1.3em; text-shadow: 0 0 10px #C0C0C0; }
+
+/* 🥉 3 Місце (Чужий) */
+tr.rank-3 {
+    background: linear-gradient(90deg, rgba(205, 127, 50, 0.15) 0%, #252525 100%);
+    border-left: 4px solid #CD7F32;
+}
+tr.rank-3 td.rank-col { font-size: 1.2em; text-shadow: 0 0 10px #CD7F32; }
+
+
+/* --- 🔥 СТИЛІ ДЛЯ МЕНЕ (is-current-user) --- */
+
+/* 1. Я не в топі (4+ місце) -> Все зелене */
+tr.is-current-user {
+    /* Рамка з усіх боків */
+    border: 2px solid #2ecc71 !important; 
+    
+    /* Зелений фон (перекриває все) */
+    background: rgba(46, 204, 113, 0.15) !important;
+    
+    /* Внутрішнє зелене сяйво */
+    box-shadow: inset 0 0 20px rgba(46, 204, 113, 0.3);
+    
+    /* Трохи збільшуємо, щоб виділити */
+    transform: scale(1.02);
+    z-index: 10;
+    position: relative;
+}
+
+/* 2. Я на 1-му місці -> ЗОЛОТА РАМКА + ЗЕЛЕНИЙ ФОН */
+tr.rank-1.is-current-user {
+    border: 3px solid #FFD700 !important; /* Золота рамка */
+    border-left: 3px solid #FFD700 !important; /* Перебиваємо дефолтний left-border */
+    
+    background: rgba(46, 204, 113, 0.2) !important; /* Зелений фон всередині */
+    
+    /* Подвійне сяйво: Золоте зовні, Зелене всередині */
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.5), inset 0 0 20px rgba(46, 204, 113, 0.4);
+}
+
+/* 3. Я на 2-му місці -> СРІБНА РАМКА + ЗЕЛЕНИЙ ФОН */
+tr.rank-2.is-current-user {
+    border: 3px solid #C0C0C0 !important; 
+    border-left: 3px solid #C0C0C0 !important;
+    
+    background: rgba(46, 204, 113, 0.2) !important;
+    
+    box-shadow: 0 0 20px rgba(192, 192, 192, 0.4), inset 0 0 20px rgba(46, 204, 113, 0.4);
+}
+
+/* 4. Я на 3-му місці -> БРОНЗОВА РАМКА + ЗЕЛЕНИЙ ФОН */
+tr.rank-3.is-current-user {
+    border: 3px solid #CD7F32 !important; 
+    border-left: 3px solid #CD7F32 !important;
+    
+    background: rgba(46, 204, 113, 0.2) !important;
+    
+    box-shadow: 0 0 20px rgba(205, 127, 50, 0.4), inset 0 0 20px rgba(46, 204, 113, 0.4);
 }
