@@ -137,18 +137,20 @@ export async function initStudentPanel() {
         if (!container) return;
 
         container.innerHTML = `
-            <h2 style="text-align:center; margin-bottom:20px;">🏆 Рейтинг класу ${currentUser.className || ""}</h2>
-            <div class="leaderboard-wrapper">
-                <table class="leaderboard-table">
+            <div class="teacher-header">
+                <h2>🏆 Рейтинг класу ${currentUser.className || ""}</h2>
+            </div>
+            <div style="background: #222; padding: 20px; border-radius: 10px; min-height: 300px;">
+                <table class="leaderboard-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
                     <thead>
-                        <tr>
-                            <th style="width: 10%;">#</th>
-                            <th style="width: 60%; text-align: left;">Учень</th>
-                            <th style="width: 30%;">Золото</th>
+                        <tr style="color: #aaa; text-align: left; background: transparent; box-shadow: none;">
+                            <th style="padding: 10px 20px; border:none;">#</th>
+                            <th style="width: 60%; text-align: left; border:none;">Учень</th>
+                            <th style="width: 30%; border:none;">Золото</th>
                         </tr>
                     </thead>
                     <tbody id="leaderboard-body">
-                        <tr><td colspan="3" style="text-align:center; padding:20px;">Завантаження... ⏳</td></tr>
+                        <tr><td colspan="3" style="text-align:center; padding:20px; color:#777;">Завантаження... ⏳</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -160,19 +162,21 @@ export async function initStudentPanel() {
             const q = query(
                 collection(db, "users"),
                 where("role", "==", "student"),
-                where("className", "==", currentUser.className)
+                where("className", "==", currentUser.className),
+                where("teacherUid", "==", currentUser.teacherUid) // 🔥 Фільтруємо по вчителю, щоб не бачити чужих 8-А
             );
 
             const querySnapshot = await getDocs(q);
             const classmates = [];
             querySnapshot.forEach((doc) => {
-                classmates.push(doc.data());
+                classmates.push({ ...doc.data(), uid: doc.id }); // Зберігаємо ID для перевірки "Це Я"
             });
 
+            // Сортування
             classmates.sort((a, b) => (b.profile.gold || 0) - (a.profile.gold || 0));
 
             if (classmates.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px;">Клас пустий...</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px; color:#777;">Клас пустий...</td></tr>`;
                 return;
             }
 
@@ -181,26 +185,34 @@ export async function initStudentPanel() {
             classmates.forEach((student, index) => {
                 const tr = document.createElement("tr");
                 
-                if (student.email === currentUser.email) {
-                    tr.className = "my-rank";
+                // --- 🔥 ЛОГІКА РАНГІВ (ЯК У ВЧИТЕЛЯ) ---
+                let rankClass = "rank-other"; 
+                let rankIcon = `#${index + 1}`;
+                
+                if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
+                else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
+                else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
+
+                // Присвоюємо клас рядку!
+                tr.className = rankClass;
+
+                // --- 🔥 ПІДСВІТКА "ЦЕ Я" ---
+                // Якщо це поточний юзер -> додаємо зелену рамку
+                if (student.uid === currentUser.uid) {
+                    tr.classList.add("is-current-user");
                 }
 
-                let rankDisplay = index + 1;
-                if (index === 0) rankDisplay = "🥇 1";
-                if (index === 1) rankDisplay = "🥈 2";
-                if (index === 2) rankDisplay = "🥉 3";
-
                 tr.innerHTML = `
-                    <td class="rank-col">${rankDisplay}</td>
-                    <td class="name-col">${student.name}</td>
-                    <td class="gold-col">${student.profile.gold || 0} 💰</td>
+                    <td class="rank-col" style="font-weight:bold;">${rankIcon}</td>
+                    <td class="name-col" style="font-size: 1.1em; color: white;">${student.name}</td>
+                    <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.profile.gold || 0} 💰</td>
                 `;
                 tbody.appendChild(tr);
             });
 
         } catch (error) {
             console.error("Помилка лідерборду:", error);
-            tbody.innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">Помилка завантаження</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="3" style="color:#e74c3c; text-align:center;">Помилка завантаження даних</td></tr>`;
         }
     }
 

@@ -743,3 +743,64 @@ label {
     75% { transform: translateX(-5px); }
     100% { transform: translateX(0); }
 }
+
+/* --- СТИЛІ ЛІДЕРБОРДУ --- */
+
+/* Базовий стиль рядка */
+.leaderboard-table tr {
+    transition: all 0.3s ease;
+    border-radius: 8px;
+}
+
+/* 🥇 1 Місце - ЗОЛОТО */
+tr.rank-1 {
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
+    border-left: 4px solid #FFD700;
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+}
+tr.rank-1 td.rank-col {
+    font-size: 1.5em; /* Трохи більша іконка */
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* 🥈 2 Місце - СРІБЛО */
+tr.rank-2 {
+    background: linear-gradient(90deg, rgba(192, 192, 192, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
+    border-left: 4px solid #C0C0C0;
+    box-shadow: 0 0 15px rgba(192, 192, 192, 0.2);
+}
+tr.rank-2 td.rank-col {
+    font-size: 1.3em;
+    text-shadow: 0 0 10px rgba(192, 192, 192, 0.5);
+}
+
+/* 🥉 3 Місце - БРОНЗА */
+tr.rank-3 {
+    background: linear-gradient(90deg, rgba(205, 127, 50, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
+    border-left: 4px solid #CD7F32;
+    box-shadow: 0 0 15px rgba(205, 127, 50, 0.2);
+}
+tr.rank-3 td.rank-col {
+    font-size: 1.2em;
+    text-shadow: 0 0 10px rgba(205, 127, 50, 0.5);
+}
+
+/* 🔹 Інші місця - СИНІЙ (стандарт) */
+tr.rank-other {
+    background: linear-gradient(90deg, rgba(52, 152, 219, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
+    border-left: 4px solid #3498db;
+}
+
+/* 🟢 ЦЕ Я (Поточний користувач) */
+/* Цей клас додається ПОВЕРХ золотого/срібного */
+tr.is-current-user {
+    border: 2px solid #2ecc71 !important; /* Яскрава зелена рамка */
+    box-shadow: 0 0 15px rgba(46, 204, 113, 0.3) inset; /* Внутрішнє зелене світіння */
+    background-color: rgba(46, 204, 113, 0.1); /* Легкий зелений відтінок */
+}
+
+/* Щоб текст не зливався */
+.leaderboard-table td {
+    padding: 12px 15px;
+    vertical-align: middle;
+}

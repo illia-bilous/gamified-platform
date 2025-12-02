@@ -120,26 +120,25 @@ async function renderClassLeaderboard(className) {
             <button id="btn-back-to-classes" class="btn btn-secondary">← Назад до класів</button>
             <h2>🏆 Лідерборд: ${className}</h2>
         </div>
-        <table class="leaderboard-table">
-            <thead>
-                <tr>
-                    <th>№</th>
-                    <th>Ім'я</th>
-                    <th>Золото 💰</th>
-                    <th>Дії</th>
-                </tr>
-            </thead>
-            <tbody id="class-leaderboard-body"></tbody>
-        </table>
+        <div style="background: #222; padding: 20px; border-radius: 10px; min-height: 300px;">
+            <table class="leaderboard-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
+                <thead>
+                    <tr style="color: #aaa; text-align: left; background: transparent; box-shadow: none;">
+                        <th style="padding: 10px 20px; border:none;">Місце</th>
+                        <th style="border:none;">Ім'я</th>
+                        <th style="border:none;">Золото</th>
+                        <th style="border:none;">Дії</th>
+                    </tr>
+                </thead>
+                <tbody id="class-leaderboard-body"></tbody>
+            </table>
+        </div>
     `;
 
-    document.getElementById("btn-back-to-classes").onclick = () => {
-        renderTeacherDashboard("teacher-content"); 
-    };
+    document.getElementById("btn-back-to-classes").onclick = () => renderTeacherDashboard("teacher-content");
 
     const tbody = document.getElementById("class-leaderboard-body");
     
-    // Запит з фільтрацією по вчителю і класу
     const q = query(
         collection(db, "users"),
         where("role", "==", "student"),
@@ -154,20 +153,31 @@ async function renderClassLeaderboard(className) {
         students.push({ ...doc.data(), uid: doc.id }); 
     });
 
+    if (students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:30px; color:#666;">Список порожній</td></tr>';
+        return;
+    }
+
     students.forEach((student, index) => {
         const tr = document.createElement("tr");
         
-        let rankDisplay = index + 1;
-        if (index === 0) rankDisplay = "🥇 1";
-        if (index === 1) rankDisplay = "🥈 2";
-        if (index === 2) rankDisplay = "🥉 3";
+        // --- 🔥 ЛОГІКА РАНГІВ (ДОДАНО) ---
+        let rankClass = "rank-other"; 
+        let rankIcon = `#${index + 1}`;
+        
+        if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
+        else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
+        else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
+
+        // Присвоюємо клас рядку!
+        tr.className = rankClass;
 
         tr.innerHTML = `
-            <td class="rank-col">${rankDisplay}</td>
-            <td class="name-col">${student.name}</td>
-            <td class="gold-col">${student.profile.gold || 0} 💰</td>
+            <td class="rank-col" style="font-weight:bold;">${rankIcon}</td>
+            <td class="name-col" style="font-size: 1.1em; color: white;">${student.name}</td>
+            <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.profile.gold || 0} 💰</td>
             <td class="action-col">
-                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" data-class="${className}">Профіль</button>
+                <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" style="background: rgba(255,255,255,0.1); border: 1px solid #777;">Профіль</button>
             </td>
         `;
         tbody.appendChild(tr);
