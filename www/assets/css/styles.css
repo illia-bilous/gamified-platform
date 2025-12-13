@@ -245,6 +245,127 @@ label {
     margin-top: auto;
 }
 
+/* --- АВАТАР І ОЛІВЕЦЬ --- */
+.profile-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+/* --- Стилі для Аватара в сайдбарі --- */
+
+/* Обгортка: тримає і картинку, і кнопку */
+.avatar-wrapper {
+    position: relative;         /* Це база для позиціювання олівця */
+    width: 120px;               /* Розмір аватара */
+    height: 120px;
+    margin: 0 auto 15px auto;   /* Центрування */
+}
+
+/* Сама картинка аватара */
+.main-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;          /* Щоб картинка не сплющувалась */
+    border-radius: 50%;         /* Робить коло */
+    border: 4px solid #f1c40f;  /* Золота рамка */
+    box-shadow: 0 0 15px rgba(241, 196, 15, 0.3);
+    background-color: #333;     /* Фон, якщо картинка прозора */
+}
+
+/* Кнопка-олівець */
+.edit-avatar-btn {
+    position: absolute;         /* Абсолютне позиціювання */
+    bottom: 5px;                /* Відступ знизу */
+    right: 5px;                 /* Відступ справа */
+    
+    background-color: #fff;
+    border: 2px solid #f1c40f;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    
+    transition: transform 0.2s, background-color 0.2s;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    padding: 0;                 /* Прибираємо зайві відступи */
+    z-index: 2;                 /* Щоб точно була зверху */
+}
+
+.edit-avatar-btn:hover {
+    transform: scale(1.1);
+    background-color: #f9f9f9;
+}
+
+/* --- Стилі для Модального вікна вибору аватара --- */
+.avatar-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.avatar-modal-content {
+    background: #2c3e50;
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    border: 2px solid #f1c40f;
+    max-width: 90%;
+}
+
+.avatars-grid {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.avatar-option {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    border: 3px solid transparent;
+    transition: transform 0.2s;
+}
+
+.avatar-option img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-option:hover {
+    transform: scale(1.1);
+}
+
+.avatar-option.selected {
+    border-color: #2ecc71; /* Зелена рамка для обраного */
+    box-shadow: 0 0 10px #2ecc71;
+}
+
+.close-modal-btn {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
 /* =========================================
    6. ГОЛОВНА ПАНЕЛЬ (ПРАВА ЧАСТИНА)
    ========================================= */
@@ -566,6 +687,43 @@ label {
     letter-spacing: 1px;
 }
 
+/* =========================================
+   /* Інфо-блок в сайдбарі вчителя 
+   ========================================= */
+
+.teacher-sidebar-info {
+    background: rgba(255, 255, 255, 0.05); /* Легкий прозорий фон */
+    padding: 15px;
+    margin: 10px 0 20px 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: center;
+}
+
+.teacher-sidebar-info h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    color: #fff;
+    font-weight: 600;
+}
+
+.teacher-id-box {
+    font-size: 0.9rem;
+    color: #ccc;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 5px 10px;
+    border-radius: 5px;
+    display: inline-block;
+}
+
+.highlight-code {
+    color: #f1c40f; /* Золотий колір для коду */
+    font-family: monospace; /* Шрифт як у коді */
+    font-weight: bold;
+    font-size: 1.1rem;
+    margin-left: 5px;
+    letter-spacing: 1px;
+}
 /* =========================================
    13. ЛІДЕРБОРД (ТАБЛИЦЯ)
    ========================================= */

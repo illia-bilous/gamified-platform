@@ -106,17 +106,27 @@
         
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h3>🎓 Кабінет Учня</h3>
+                <h3>🧑‍🎓 Кабінет Учня</h3>
             </div>
 
-            <div class="sidebar-profile-info">
-                <div style="font-size: 30px; margin-bottom: 5px;">👤</div>
-                <h4 id="student-name-display" style="margin:0; color:white;">Ім'я</h4>
-                <div id="student-class-display" class="class-badge" style="margin-top:5px;">Клас --</div>
-                <div class="coin-balance-sidebar" style="margin-top: 10px; font-size: 1.2em; color: #ffd700; font-weight: bold;">
-                    💰 <span id="student-gold-display">0</span>
+         <div class="sidebar-profile-info"> 
+            <div class="profile-section">
+                <div class="avatar-wrapper">
+                    <img id="current-user-avatar" src="assets/img/base.png" alt="Avatar" class="main-avatar">
+                    
+                    <button id="btn-edit-avatar" class="edit-avatar-btn" type="button">
+                        ✏️
+                    </button>
                 </div>
             </div>
+
+            <h4 id="student-name-display">Завантаження...</h4>
+            <div id="student-class-display" class="class-badge">--</div>
+            
+            <div class="coin-balance-sidebar">
+                💰 <span id="student-gold-display">0</span>
+            </div>
+        </div>
 
             <nav class="sidebar-nav">
                 <button class="menu-item active" data-panel="home">
@@ -135,10 +145,6 @@
                 </button>
 
                 <div class="spacer"></div> 
-                
-                <button class="menu-item" data-panel="settings">
-                    ⚙️ Налаштування
-                </button>
 
                 <button id="logout-student" class="menu-item logout">
                     🚪 Вихід
@@ -196,21 +202,23 @@
                 <ul id="student-inventory-list" class="inventory-list"></ul>
             </div>
 
-            <div id="view-settings" class="panel-view hidden">
-                <div style="text-align: center; margin-top: 50px;">
-                    <h2>⚙️ Налаштування</h2>
-                    <p>Функція зміни пароля та аватарки в розробці.</p>
-                </div>
-            </div>
-
         </main>
     </section>
 
     <section id="screen-teacher" class="screen dashboard">
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h3>Вчительська</h3>
+                <h3>🧑‍🏫 Вчительська</h3>
             </div>
+
+            <div class="teacher-sidebar-info">
+                <h3 id="panel-teacher-name">Вчитель</h3>
+                <div class="teacher-id-box">
+                    <span>Мій ID:</span>
+                    <span id="panel-teacher-code" class="highlight-code">...</span>
+                </div>
+            </div>
+
             <nav class="sidebar-nav">
                 <button class="menu-item active" data-panel="classes">
                     👥 Класи / Учні
@@ -238,6 +246,7 @@
             </div>
              
             <div id="view-tasks" class="panel-view hidden">
+                <div class="sidebar-profile-info"></div>
                 <h2 style="text-align:center; color: var(--accent-gold);">🗝️ Наповнення Лабіринту</h2>
                 <p style="text-align:center;">Заповніть приклади для кожних дверей у лабіринті.</p>
                 
@@ -273,6 +282,8 @@
              </div>
         </main>
     </section>
+
+    <div id="avatar-modal-container"></div>
 
     <script type="module" src="src/firebase.js"></script>
     <script type="module" src="src/router.js"></script>

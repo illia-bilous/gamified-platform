@@ -19,7 +19,16 @@ import { getShopItems, updateItemPrice } from "./shopData.js";
 // --- ФУНКЦІЯ ЗАПУСКУ ---
 export function initTeacherPanel() {
     console.log("TeacherPanel: Init...");
-    
+    const user = getCurrentUser();
+    if (!user || user.role !== 'teacher') return;
+
+    // Відображення імені та
+    const nameEl = document.getElementById("panel-teacher-name");
+    const codeEl = document.getElementById("panel-teacher-code");
+
+    if (nameEl) nameEl.textContent = user.name; // Виводимо ім'я
+    if (codeEl) codeEl.textContent = user.teacherCode || "Error"; // Виводимо ID
+   
     // 1. Головна панель (Класи)
     renderTeacherDashboard("teacher-content"); 
 

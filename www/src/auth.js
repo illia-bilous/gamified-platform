@@ -167,7 +167,7 @@ export function initAuth(onLoginSuccess) {
                     teacherUid: linkedTeacherUid,      // Тільки для учня
                     
                     loginID: loginToDisplay,
-                    profile: { gold: 2500, inventory: [], welcomeBonusReceived: true },
+                    profile: { gold: 2500, inventory: [], welcomeBonusReceived: true, avatar: 'assets/img/base.png' },
                     createdAt: new Date().toISOString()
                 };
 
