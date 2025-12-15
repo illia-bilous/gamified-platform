@@ -1,23 +1,21 @@
-// 1. Імпортуємо Firebase через інтернет (CDN)
+// src/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// 2. Твоя конфігурація (з твого повідомлення)
 const firebaseConfig = {
   apiKey: "AIzaSyDM5N2KjctWbKKtY1bP0bde5kaNxqDExbI",
   authDomain: "mathmaze-d57fb.firebaseapp.com",
   projectId: "mathmaze-d57fb",
-  storageBucket: "mathmaze-d57fb.firebasestorage.app",
+  storageBucket: "mathmaze-d57fb.firebasestorage.app", // Виправлено (стандартний домен)
   messagingSenderId: "981708916474",
   appId: "1:981708916474:web:b050824643314771e2eb43"
 };
 
-// 3. Ініціалізація
+// Ініціалізація
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-// 4. Експортуємо сервіси для використання в інших файлах
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-
-console.log("🔥 Firebase (Auth + Firestore) підключено успішно!");
+// Експортуємо
+export { auth, db };

@@ -22,21 +22,21 @@ if (!window.hasUnityListener) {
     window.addEventListener("message", function(event) {
         if (typeof event.data !== "string") return;
 
-        console.log("📨 Message from Unity:", event.data);
+        console.log("📨 Отримано повідомлення від Unity:", event.data); // 🔥 ДИВИСЬ В КОНСОЛЬ (F12)
 
-        // --- ВАРІАНТ 1: Новий формат (Золото + Оцінка) ---
+        // --- ВАРІАНТ 1: Новий формат (Золото + Оцінка + Рівень) ---
+        // Очікуємо: "LEVEL_COMPLETE|100|12|1" (Золото | Оцінка | Номер рівня)
         if (event.data.startsWith("LEVEL_COMPLETE|")) {
             const parts = event.data.split("|");
-            const amount = parseInt(parts[1]); 
-            const grade = parseFloat(parts[2]);
-            handleLevelComplete(amount, grade);
+            
+            // Захист від помилок (якщо Unity прислала щось дивне)
+            const amount = parseInt(parts[1]) || 50;  // Якщо NaN, дамо 50 монет
+            const grade = parseFloat(parts[2]) || 0;
+            const levelIndex = parseInt(parts[3]) || 1; // Номер рівня, який пройшли
+
+            handleLevelComplete(amount, grade, levelIndex);
         }
-        // --- ВАРІАНТ 2: Старий формат (Тільки золото) ---
-        else if (event.data.startsWith("ADD_COINS|")) {
-            const amount = parseInt(event.data.split("|")[1]);
-            handleLevelComplete(amount, 0); 
-        }
-        // --- ВАРІАНТ 3: Закриття гри ---
+        // --- ВАРІАНТ 2: Закриття гри ---
         else if (event.data === "CLOSE_GAME") {
             if (window.closeUnityGame) window.closeUnityGame();
         }
@@ -45,34 +45,57 @@ if (!window.hasUnityListener) {
 }
 
 // Функція обробки результатів
-async function handleLevelComplete(amount, grade) {
+async function handleLevelComplete(amount, grade, levelCompleted) {
     let currentUser = getCurrentUser(); 
     if (currentUser) {
-        console.log(`✅ Нарахування: +${amount}, Оцінка: ${grade}`);
+        console.log(`✅ Прогрес: +${amount} монет, Оцінка: ${grade}, Рівень: ${levelCompleted}`);
         
         // 1. Оновлюємо баланс
         currentUser.profile.gold = (currentUser.profile.gold || 0) + amount;
         
-        // 2. Зберігаємо в базу і локально
+        // 2. 🔥 Оновлюємо максимальний відкритий рівень
+        if (!currentUser.profile.progress) currentUser.profile.progress = {};
+        
+        // Якщо пройшли 1-й рівень, значить відкрили 2-й (тому +1)
+        // Але записуємо, тільки якщо це новий рекорд
+        const currentMax = currentUser.profile.progress.maxLevel || 1;
+        if (levelCompleted >= currentMax) {
+             currentUser.profile.progress.maxLevel = levelCompleted + 1;
+             console.log("🔓 Відкрито новий рівень:", levelCompleted + 1);
+        }
+
+        // 3. Зберігаємо історію гри в окрему колекцію (для вчителя)
+        try {
+            const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+            await addDoc(collection(db, "game_results"), {
+                userId: currentUser.uid,
+                userName: currentUser.name,
+                level: levelCompleted,
+                grade: grade,
+                goldEarned: amount,
+                timestamp: new Date()
+            });
+        } catch (e) { console.error("History save error:", e); }
+
+        // 4. Зберігаємо профіль користувача
         await saveUserData(currentUser);
         updateHomeDisplay(currentUser);
         
-        // 3. Формуємо повідомлення для учня
-        let msg = `🎉 Рівень пройдено!\n💰 Нагорода: ${amount}`;
-        if (grade > 0) {
-            msg += `\n🌟 Твоя оцінка: ${grade} / 12`;
-        }
+        // 5. Повідомлення
+        let msg = `🎉 Рівень ${levelCompleted} пройдено!\n💰 Нагорода: ${amount}`;
+        if (!isNaN(grade) && grade > 0) msg += `\n🌟 Оцінка: ${grade}`;
+        
         alert(msg);
         
-        // 4. Оновлюємо лідерборд
+        // Оновлюємо лідерборд
         setTimeout(() => renderLeaderboard(currentUser), 1000);
     }
-}
+}   
 
 async function saveUserData(user) {
     localStorage.setItem("currentUser", JSON.stringify(user));
     if (user.uid) {
-        try {
+        try {   
             const userRef = doc(db, "users", user.uid);
             // Зберігаємо весь профіль, включаючи новий аватар
             await updateDoc(userRef, { profile: user.profile });

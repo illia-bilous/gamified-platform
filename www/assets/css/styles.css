@@ -1004,3 +1004,65 @@ tr.rank-3.is-current-user {
     
     box-shadow: 0 0 20px rgba(205, 127, 50, 0.4), inset 0 0 20px rgba(46, 204, 113, 0.4);
 }
+
+/* 14. ТАБЛИЦЯ АНАЛІТИКИ */
+.table-responsive {
+    overflow-x: auto;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.analytics-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1e1e1e; /* Темний фон таблиці */
+    color: #ddd;
+    font-size: 0.95em;
+}
+
+.analytics-table th {
+    background: #6c5ce7; /* Акцентний колір шапки */
+    color: white;
+    padding: 15px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85em;
+    letter-spacing: 1px;
+}
+
+.analytics-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #333;
+}
+
+.analytics-table tr:hover {
+    background-color: #2d2d2d; /* Підсвітка рядка при наведенні */
+}
+
+.analytics-table tr:last-child td {
+    border-bottom: none;
+}
+
+.badge-level {
+    background: #333;
+    color: #f1c40f;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    margin-left: 5px;
+    border: 1px solid #555;
+}
+
+/* Loader style */
+.loader {
+    font-size: 1.2em;
+    color: var(--accent-gold);
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+}
