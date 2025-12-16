@@ -6,7 +6,7 @@ import { initStudentPanel } from "./studentPanel.js";
 import { initTeacherPanel } from "./teacherPanel.js"; 
 import { loadTeacherAnalytics } from "./analytics.js";
 
-// 🔥 НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE
+//  НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE
 import { db } from "./firebase.js";
 import { doc, updateDoc, increment, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -20,7 +20,6 @@ const logout = () => {
     showScreen("screen-home");
 };
 
-// ... (Ваші функції setupButtonListener, resetForms, updateRegisterView, setupDashboardNavigation без змін) ...
 
 function setupButtonListener(id, handler) {
     const btn = document.getElementById(id);

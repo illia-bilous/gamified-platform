@@ -46,51 +46,74 @@ if (!window.hasUnityListener) {
 
 // Функція обробки результатів
 async function handleLevelComplete(amount, grade, levelCompleted) {
+    console.log("📥 Отримано дані з Unity (сирі):", amount, grade, levelCompleted);
+
     let currentUser = getCurrentUser(); 
-    if (currentUser) {
-        console.log(`✅ Прогрес: +${amount} монет, Оцінка: ${grade}, Рівень: ${levelCompleted}`);
-        
-        // 1. Оновлюємо баланс
-        currentUser.profile.gold = (currentUser.profile.gold || 0) + amount;
-        
-        // 2. 🔥 Оновлюємо максимальний відкритий рівень
-        if (!currentUser.profile.progress) currentUser.profile.progress = {};
-        
-        // Якщо пройшли 1-й рівень, значить відкрили 2-й (тому +1)
-        // Але записуємо, тільки якщо це новий рекорд
-        const currentMax = currentUser.profile.progress.maxLevel || 1;
-        if (levelCompleted >= currentMax) {
-             currentUser.profile.progress.maxLevel = levelCompleted + 1;
-             console.log("🔓 Відкрито новий рівень:", levelCompleted + 1);
-        }
+    if (!currentUser) return;
 
-        // 3. Зберігаємо історію гри в окрему колекцію (для вчителя)
-        try {
-            const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-            await addDoc(collection(db, "game_results"), {
-                userId: currentUser.uid,
-                userName: currentUser.name,
-                level: levelCompleted,
-                grade: grade,
-                goldEarned: amount,
-                timestamp: new Date()
-            });
-        } catch (e) { console.error("History save error:", e); }
+    // --- 🛡️ БЛОК ЗАХИСТУ ДАНИХ (Sanitization) ---
+    
+    // 1. Примусово робимо числами
+    let safeAmount = Number(amount);
+    let safeGrade = Number(grade);
+    let safeLevel = Number(levelCompleted);
 
-        // 4. Зберігаємо профіль користувача
-        await saveUserData(currentUser);
-        updateHomeDisplay(currentUser);
-        
-        // 5. Повідомлення
-        let msg = `🎉 Рівень ${levelCompleted} пройдено!\n💰 Нагорода: ${amount}`;
-        if (!isNaN(grade) && grade > 0) msg += `\n🌟 Оцінка: ${grade}`;
-        
-        alert(msg);
-        
-        // Оновлюємо лідерборд
-        setTimeout(() => renderLeaderboard(currentUser), 1000);
+    // 2. Якщо вийшло NaN (помилка), замінюємо на безпечні нулі
+    if (isNaN(safeAmount)) {
+        console.warn("⚠️ Помилка в amount, замінено на 0");
+        safeAmount = 0;
     }
-}   
+    if (isNaN(safeGrade)) {
+        safeGrade = 0;
+    }
+    if (isNaN(safeLevel)) {
+        safeLevel = 1;
+    }
+    // ----------------------------------------------
+
+    console.log(`✅ Чисті дані для запису: Золото=${safeAmount}, Оцінка=${safeGrade}, Рівень=${safeLevel}`);
+
+    // Переконуємось, що профіль існує
+    if (!currentUser.profile) currentUser.profile = {};
+    
+    // Отримуємо поточне золото з бази, теж захищаючись від NaN
+    let currentGoldInDb = Number(currentUser.profile.gold);
+    if (isNaN(currentGoldInDb)) currentGoldInDb = 0;
+
+    // Оновлюємо баланс
+    currentUser.profile.gold = currentGoldInDb + safeAmount;
+
+    // Логіка рівнів
+    if (!currentUser.profile.progress) currentUser.profile.progress = {};
+    const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
+    
+    if (safeLevel >= currentMax) {
+         currentUser.profile.progress.maxLevel = safeLevel + 1;
+    }
+
+    // Зберігаємо профіль (тепер тут точно числа!)
+    await saveUserData(currentUser);
+    updateHomeDisplay(currentUser);
+
+    // Зберігаємо історію для вчителя
+    try {
+        const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+        await addDoc(collection(db, "game_results"), {
+            userId: currentUser.uid,
+            userName: currentUser.name,
+            userClass: currentUser.className || "N/A",
+            level: safeLevel,     // Точно число
+            grade: safeGrade,     // Точно число
+            goldEarned: safeAmount, // Точно число
+            timestamp: new Date()
+        });
+    } catch (e) { console.error("History save error:", e); }
+
+    // Повідомлення
+    alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет`);
+    
+    setTimeout(() => renderLeaderboard(currentUser), 1500);
+}
 
 async function saveUserData(user) {
     localStorage.setItem("currentUser", JSON.stringify(user));
@@ -289,10 +312,27 @@ async function renderLeaderboard(currentUser) {
             where("teacherUid", "==", currentUser.teacherUid)
         );
         const querySnapshot = await getDocs(q);
-        const classmates = [];
-        querySnapshot.forEach((doc) => classmates.push({ ...doc.data(), uid: doc.id }));
+        let classmates = []; // Використовуємо let, щоб можна було модифікувати
+
+        // 1. Отримуємо дані та чистимо їх від "сміття" (NaN)
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            
+            // 🔥 ВАЖЛИВО: Захист від NaN
+            let safeGold = Number(data.profile?.gold);
+            if (isNaN(safeGold)) {
+                safeGold = 0; 
+            }
+
+            classmates.push({ 
+                ...data, 
+                uid: doc.id, 
+                cleanGold: safeGold // Зберігаємо чисте значення для сортування
+            });
+        });
         
-        classmates.sort((a, b) => (b.profile.gold || 0) - (a.profile.gold || 0));
+        // 2. Сортуємо по чистому значенню
+        classmates.sort((a, b) => b.cleanGold - a.cleanGold);
 
         if (classmates.length === 0) {
             tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px; color:#777;">Клас пустий...</td></tr>`;
@@ -304,6 +344,7 @@ async function renderLeaderboard(currentUser) {
             const tr = document.createElement("tr");
             let rankClass = "rank-other"; 
             let rankIcon = `#${index + 1}`;
+            
             if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
             else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
             else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
@@ -311,8 +352,8 @@ async function renderLeaderboard(currentUser) {
             tr.className = rankClass;
             if (student.uid === currentUser.uid) tr.classList.add("is-current-user");
 
-            // 🔥 FIX: Перевірка шляху для лідерборду
-            let ava = student.profile.avatar || DEFAULT_AVATAR;
+            // Перевірка аватара
+            let ava = student.profile?.avatar || 'assets/img/boy.png';
             if (ava.includes('assets/avatars/')) {
                 ava = ava.replace('assets/avatars/', 'assets/img/');
             }
@@ -325,7 +366,7 @@ async function renderLeaderboard(currentUser) {
                          onerror="this.src='assets/img/boy.png'">
                     ${student.name}
                 </td>
-                <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.profile.gold || 0} 💰</td>
+                <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.cleanGold} 💰</td>
             `;
             tbody.appendChild(tr);
         });
