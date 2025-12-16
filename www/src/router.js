@@ -1,14 +1,24 @@
 // src/router.js
-
 import { showScreen } from "./ui.js";
 import { initAuth, getCurrentUser } from "./auth.js";
 import { initStudentPanel } from "./studentPanel.js";
 import { initTeacherPanel } from "./teacherPanel.js"; 
-import { loadTeacherAnalytics } from "./analytics.js";
+// import { loadTeacherAnalytics } from "./analytics.js"; // <--- Це можна закоментувати, якщо код тепер всередині цього файлу
 
-//  НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE
+//  НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE (Всі разом в одному місці!)
 import { db } from "./firebase.js";
-import { doc, updateDoc, increment, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { 
+    doc, 
+    updateDoc, 
+    increment, 
+    collection, 
+    addDoc, 
+    serverTimestamp,
+    query,       // <--- Додано з нижнього блоку
+    where,       // <--- Додано з нижнього блоку
+    getDocs,     // <--- Додано з нижнього блоку
+    orderBy      // <--- Додано з нижнього блоку
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let currentRole = null;
 
@@ -155,8 +165,12 @@ window.addEventListener("message", async (event) => {
 
             // А) Нараховуємо золото
             const userRef = doc(db, "users", user.uid);
+
+            // ГАРАНТУЄМО, що це число. Якщо прийде сміття, запишемо 0.
+            const scoreAmount = Number(data.score) || 0; 
+
             await updateDoc(userRef, {
-                "profile.gold": increment(data.score)
+                "profile.gold": increment(scoreAmount)
             });
 
             // Б) Записуємо в історію ігор (для аналітики вчителя)
@@ -256,3 +270,24 @@ function initializeApp() {
 }
 
 initializeApp();
+
+// Тимчасова функція для ремонту
+async function fixBrokenGold() {
+    console.log("🚑 Починаю лікування золота...");
+    const snapshot = await getDocs(collection(db, "users"));
+    
+    snapshot.forEach(async (userDoc) => {
+        const data = userDoc.data();
+        // Якщо у профілі NaN або немає золота
+        if (data.profile && (isNaN(data.profile.gold) || data.profile.gold === null)) {
+            console.log(`🔧 Виправляю користувача: ${data.name || userDoc.id}`);
+            await updateDoc(doc(db, "users", userDoc.id), {
+                "profile.gold": 0 // Скидаємо поламане золото на 0
+            });
+        }
+    });
+    console.log("✅ Лікування завершено (перевірте консоль на помилки)");
+}
+
+// Запустити через 3 секунди після завантаження сторінки
+setTimeout(fixBrokenGold, 3000);

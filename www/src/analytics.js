@@ -46,13 +46,17 @@ export async function loadTeacherAnalytics() {
             // 2. ПРАВИЛЬНИЙ ПОШУК ЛОГІНУ (з auth.js: loginID)
             const studentLogin = user.loginID || "—";
             
-            // 3. ПРАВИЛЬНИЙ ПОШУК ЗОЛОТА (з auth.js: profile.gold)
+            // 3. ПРАВИЛЬНИЙ ПОШУК ЗОЛОТА
             let totalGold = 0;
             if (user.profile && user.profile.gold !== undefined) {
-                totalGold = user.profile.gold;
+                totalGold = Number(user.profile.gold); // Конвертуємо
             } else if (user.gold !== undefined) {
-                // На випадок старих акаунтів
-                totalGold = user.gold;
+                totalGold = Number(user.gold);
+            }
+
+            // Якщо в базі помилка (NaN), показуємо 0
+            if (isNaN(totalGold)) {
+                totalGold = 0; 
             }
 
             // Аватар теж беремо з профілю
