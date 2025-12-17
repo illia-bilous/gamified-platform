@@ -7,6 +7,9 @@ import {
     orderBy 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+import { getCurrentUser } from "./auth.js"; 
+const currentTeacher = getCurrentUser();
+
 export async function loadTeacherAnalytics() {
     const container = document.getElementById("analytics-content");
     container.innerHTML = '<p style="text-align:center;">🔄 Завантаження списку учнів...</p>';
@@ -14,7 +17,11 @@ export async function loadTeacherAnalytics() {
     try {
         const usersRef = collection(db, "users");
         // Беремо тільки студентів
-        const q = query(usersRef, where("role", "==", "student"));
+        const q = query(
+    usersRef, 
+    where("role", "==", "student"),
+    where("teacherUid", "==", currentTeacher.uid) // Або where("className", "==", "8-A")
+);
         const snapshot = await getDocs(q);
 
         if (snapshot.empty) {

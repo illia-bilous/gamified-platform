@@ -3,8 +3,19 @@
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemById } from "./shopData.js";
 import { db } from "./firebase.js"; 
-import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+import { 
+    collection, 
+    query, 
+    where, 
+    getDocs, 
+    doc, 
+    getDoc, 
+    updateDoc, 
+    onSnapshot, // <--- ВАЖЛИВО: Для живого оновлення
+    increment,
+    serverTimestamp,
+    addDoc
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 // ==========================================
 // 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
 // ==========================================
@@ -14,7 +25,7 @@ const AVAILABLE_AVATARS = [
     'assets/img/boy.png',
     'assets/img/girl.png',
 ];
-
+let unsubscribeGold = null; // Змінна для керування слухачем
 // ==========================================
 // 📡 ГЛОБАЛЬНИЙ СЛУХАЧ (UNITY <-> SITE)
 // ==========================================
@@ -46,73 +57,59 @@ if (!window.hasUnityListener) {
 
 // Функція обробки результатів
 async function handleLevelComplete(amount, grade, levelCompleted) {
-    console.log("📥 Отримано дані з Unity (сирі):", amount, grade, levelCompleted);
+    console.log(`📥 Unity Data: Gold=${amount}, Grade=${grade}, Level=${levelCompleted}`);
 
     let currentUser = getCurrentUser(); 
     if (!currentUser) return;
 
-    // --- 🛡️ БЛОК ЗАХИСТУ ДАНИХ (Sanitization) ---
+    // Санітизація (очищення) даних
+    let safeAmount = Number(amount) || 0;
+    let safeGrade = Number(grade) || 0;
+    let safeLevel = Number(levelCompleted) || 1;
+
+    // 1. Оновлюємо БД (використовуємо increment для безпеки)
+    // increment гарантує, що ми додамо золото до того, що є на сервері, 
+    // навіть якщо локальні дані застаріли.
+    const userRef = doc(db, "users", currentUser.uid);
     
-    // 1. Примусово робимо числами
-    let safeAmount = Number(amount);
-    let safeGrade = Number(grade);
-    let safeLevel = Number(levelCompleted);
-
-    // 2. Якщо вийшло NaN (помилка), замінюємо на безпечні нулі
-    if (isNaN(safeAmount)) {
-        console.warn("⚠️ Помилка в amount, замінено на 0");
-        safeAmount = 0;
-    }
-    if (isNaN(safeGrade)) {
-        safeGrade = 0;
-    }
-    if (isNaN(safeLevel)) {
-        safeLevel = 1;
-    }
-    // ----------------------------------------------
-
-    console.log(`✅ Чисті дані для запису: Золото=${safeAmount}, Оцінка=${safeGrade}, Рівень=${safeLevel}`);
-
-    // Переконуємось, що профіль існує
-    if (!currentUser.profile) currentUser.profile = {};
-    
-    // Отримуємо поточне золото з бази, теж захищаючись від NaN
-    let currentGoldInDb = Number(currentUser.profile.gold);
-    if (isNaN(currentGoldInDb)) currentGoldInDb = 0;
-
-    // Оновлюємо баланс
-    currentUser.profile.gold = currentGoldInDb + safeAmount;
-
-    // Логіка рівнів
-    if (!currentUser.profile.progress) currentUser.profile.progress = {};
-    const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
-    
-    if (safeLevel >= currentMax) {
-         currentUser.profile.progress.maxLevel = safeLevel + 1;
-    }
-
-    // Зберігаємо профіль (тепер тут точно числа!)
-    await saveUserData(currentUser);
-    updateHomeDisplay(currentUser);
-
-    // Зберігаємо історію для вчителя
     try {
-        const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+        await updateDoc(userRef, {
+            "profile.gold": increment(safeAmount), 
+            [`profile.progress.level_${safeLevel}`]: safeGrade, 
+            "profile.progress.maxLevel": increment(0) // Просто трігер
+        });
+
+        // Оновлюємо локальний об'єкт для миттєвої реакції
+        currentUser.profile.gold += safeAmount;
+        
+        // Перевірка макс. рівня локально
+        if (!currentUser.profile.progress) currentUser.profile.progress = {};
+        const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
+        if (safeLevel >= currentMax) {
+             currentUser.profile.progress.maxLevel = safeLevel + 1;
+             await updateDoc(userRef, { "profile.progress.maxLevel": safeLevel + 1 });
+        }
+
+        // 2. Історія (для вчителя)
         await addDoc(collection(db, "game_results"), {
             userId: currentUser.uid,
             userName: currentUser.name,
             userClass: currentUser.className || "N/A",
-            level: safeLevel,     // Точно число
-            grade: safeGrade,     // Точно число
-            goldEarned: safeAmount, // Точно число
-            timestamp: new Date()
+            level: safeLevel,
+            grade: safeGrade,
+            goldEarned: safeAmount,
+            timestamp: serverTimestamp()
         });
-    } catch (e) { console.error("History save error:", e); }
 
-    // Повідомлення
-    alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет`);
-    
-    setTimeout(() => renderLeaderboard(currentUser), 1500);
+        alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет`);
+        
+        // Оновити рейтинг через секунду
+        setTimeout(() => renderLeaderboard(currentUser), 1500);
+
+    } catch (e) {
+        console.error("❌ Save Error:", e);
+        alert("Помилка збереження результату. Перевірте інтернет.");
+    }
 }
 
 async function saveUserData(user) {
@@ -132,7 +129,7 @@ async function saveUserData(user) {
 export async function initStudentPanel() {
     console.log("StudentPanel: Init...");
     
-    // Завантаження конфігу гри
+    // 1. Завантаження налаштувань гри
     try {
         const configRef = doc(db, "game_config", "maze_1");
         const configSnap = await getDoc(configRef);
@@ -144,21 +141,56 @@ export async function initStudentPanel() {
     let user = getCurrentUser();
     if (!user) return;
 
-    // Оновлення інтерфейсу
+    // 2. Початкове оновлення інтерфейсу
     updateHomeDisplay(user);
     renderLeaderboard(user);
-
-    // Ініціалізація системи аватарів
     setupAvatarSystem(user);
+    setupUnityUI();
 
-    // Магазин
+    // 3. Магазин
     const shopItems = getShopItems();
     renderShopSection("rewards-micro-list", shopItems.micro);
     renderShopSection("rewards-medium-list", shopItems.medium);
     renderShopSection("rewards-large-list", shopItems.large);
 
-    // Підключення кнопок Unity
-    setupUnityUI();
+    // 4. 🔥 ЖИВЕ ОНОВЛЕННЯ ЗОЛОТА (Найважливіша частина)
+    // Вимикаємо старого слухача, якщо він був
+    if (unsubscribeGold) unsubscribeGold();
+
+    const userRef = doc(db, "users", user.uid);
+    unsubscribeGold = onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const newGold = data.profile?.gold || 0;
+            const newInventory = data.profile?.inventory || [];
+
+            // Оновлюємо UI (Текст + Анімація)
+            const goldEl = document.getElementById("student-gold-display");
+            if (goldEl) {
+                // Якщо баланс змінився, робимо "пульсацію"
+                if (goldEl.innerText !== `${newGold} 💰`) {
+                    goldEl.style.transition = "transform 0.2s ease, color 0.2s ease";
+                    goldEl.style.color = "#2ecc71"; // Зелений
+                    goldEl.style.transform = "scale(1.3)";
+                    
+                    setTimeout(() => {
+                        goldEl.style.color = ""; 
+                        goldEl.style.transform = "scale(1)";
+                    }, 500);
+                }
+                goldEl.innerText = `${newGold} 💰`;
+            }
+
+            // 🔥 ВАЖЛИВО: Оновлюємо дані в пам'яті браузера
+            // Це потрібно, щоб магазин "знав", що у нас з'явилися гроші
+            user.profile.gold = newGold;
+            user.profile.inventory = newInventory;
+            localStorage.setItem("currentUser", JSON.stringify(user));
+            
+            // Якщо змінився інвентар (хтось купив щось), перемалювати його
+            renderInventory(user);
+        }
+    });
 }
 
 // ==========================================
@@ -466,17 +498,36 @@ function renderShopSection(containerId, items) {
     });
 }
 
-function buyItem(visualItem) {
-    let u = getCurrentUser();
+async function buyItem(visualItem) {
+    // Отримуємо найсвіжіші дані (вони оновлюються через onSnapshot)
+    let u = getCurrentUser(); 
     const realItem = findItemById(visualItem.id);
+    
     if (!realItem) return;
+    
     if (u.profile.gold >= realItem.price) {
-        u.profile.gold -= realItem.price;
+        // 1. Списання золота (оптимістичне оновлення)
+        const newGold = u.profile.gold - realItem.price;
+        
+        // 2. Додавання предмету
         if (!u.profile.inventory) u.profile.inventory = [];
-        u.profile.inventory.push({ id: realItem.id, name: realItem.name, date: new Date().toISOString() });
-        saveUserData(u);
-        updateHomeDisplay(u);
-        alert(`Придбано: ${realItem.name}!`);
+        const newItem = { id: realItem.id, name: realItem.name, date: new Date().toISOString() };
+        
+        // 3. Збереження в базу
+        try {
+            const userRef = doc(db, "users", u.uid);
+            await updateDoc(userRef, {
+                "profile.gold": newGold,
+                "profile.inventory": [...u.profile.inventory, newItem]
+            });
+
+            alert(`Придбано: ${realItem.name}!`);
+            // Функція initStudentPanel (через onSnapshot) сама побачить зміни і оновить UI
+            
+        } catch (e) {
+            console.error(e);
+            alert("Помилка покупки. Спробуйте ще раз.");
+        }
     } else {
         alert("Недостатньо золота!");
     }
