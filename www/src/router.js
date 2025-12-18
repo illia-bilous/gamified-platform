@@ -3,8 +3,8 @@ import { showScreen } from "./ui.js";
 import { initAuth, getCurrentUser } from "./auth.js";
 import { initStudentPanel } from "./studentPanel.js";
 import { initTeacherPanel } from "./teacherPanel.js"; 
-// import { loadTeacherAnalytics } from "./analytics.js"; // <--- Це можна закоментувати, якщо код тепер всередині цього файлу
 
+import { loadTeacherAnalytics } from "./analytics.js";
 //  НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE (Всі разом в одному місці!)
 import { db } from "./firebase.js";
 import { 
@@ -17,7 +17,8 @@ import {
     query,       // <--- Додано з нижнього блоку
     where,       // <--- Додано з нижнього блоку
     getDocs,     // <--- Додано з нижнього блоку
-    orderBy      // <--- Додано з нижнього блоку
+    orderBy,      // <--- Додано з нижнього блоку
+    onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let currentRole = null;
