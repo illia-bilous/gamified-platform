@@ -1,21 +1,11 @@
 // src/studentPanel.js
 
 import { getCurrentUser } from "./auth.js";
-import { getShopItems, findItemById } from "./shopData.js";
+// 👇 ВИПРАВЛЕНО: Імпортуємо findItemInList замість findItemById
+import { getShopItems, findItemInList } from "./shopData.js";
 import { db } from "./firebase.js"; 
-import { 
-    collection, 
-    query, 
-    where, 
-    getDocs, 
-    doc, 
-    getDoc, 
-    updateDoc, 
-    onSnapshot, // <--- ВАЖЛИВО: Для живого оновлення
-    increment,
-    serverTimestamp,
-    addDoc
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
 // ==========================================
 // 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
 // ==========================================
@@ -25,7 +15,10 @@ const AVAILABLE_AVATARS = [
     'assets/img/boy.png',
     'assets/img/girl.png',
 ];
-let unsubscribeGold = null; // Змінна для керування слухачем
+
+// 👇 ДОДАНО: Глобальна змінна для кешування товарів
+let cachedShopItems = null;
+
 // ==========================================
 // 📡 ГЛОБАЛЬНИЙ СЛУХАЧ (UNITY <-> SITE)
 // ==========================================
@@ -33,17 +26,15 @@ if (!window.hasUnityListener) {
     window.addEventListener("message", function(event) {
         if (typeof event.data !== "string") return;
 
-        console.log("📨 Отримано повідомлення від Unity:", event.data); // 🔥 ДИВИСЬ В КОНСОЛЬ (F12)
+        console.log("📨 Отримано повідомлення від Unity:", event.data);
 
         // --- ВАРІАНТ 1: Новий формат (Золото + Оцінка + Рівень) ---
-        // Очікуємо: "LEVEL_COMPLETE|100|12|1" (Золото | Оцінка | Номер рівня)
         if (event.data.startsWith("LEVEL_COMPLETE|")) {
             const parts = event.data.split("|");
             
-            // Захист від помилок (якщо Unity прислала щось дивне)
-            const amount = parseInt(parts[1]) || 50;  // Якщо NaN, дамо 50 монет
+            const amount = parseInt(parts[1]) || 50;
             const grade = parseFloat(parts[2]) || 0;
-            const levelIndex = parseInt(parts[3]) || 1; // Номер рівня, який пройшли
+            const levelIndex = parseInt(parts[3]) || 1;
 
             handleLevelComplete(amount, grade, levelIndex);
         }
@@ -57,40 +48,42 @@ if (!window.hasUnityListener) {
 
 // Функція обробки результатів
 async function handleLevelComplete(amount, grade, levelCompleted) {
-    console.log(`📥 Unity Data: Gold=${amount}, Grade=${grade}, Level=${levelCompleted}`);
+    console.log("📥 Отримано дані з Unity (сирі):", amount, grade, levelCompleted);
 
     let currentUser = getCurrentUser(); 
     if (!currentUser) return;
 
-    // Санітизація (очищення) даних
-    let safeAmount = Number(amount) || 0;
-    let safeGrade = Number(grade) || 0;
-    let safeLevel = Number(levelCompleted) || 1;
+    // --- 🛡️ БЛОК ЗАХИСТУ ДАНИХ ---
+    let safeAmount = Number(amount);
+    let safeGrade = Number(grade);
+    let safeLevel = Number(levelCompleted);
 
-    // 1. Оновлюємо БД (використовуємо increment для безпеки)
-    // increment гарантує, що ми додамо золото до того, що є на сервері, 
-    // навіть якщо локальні дані застаріли.
-    const userRef = doc(db, "users", currentUser.uid);
+    if (isNaN(safeAmount)) { safeAmount = 0; }
+    if (isNaN(safeGrade)) { safeGrade = 0; }
+    if (isNaN(safeLevel)) { safeLevel = 1; }
+
+    console.log(`✅ Чисті дані: Золото=${safeAmount}, Оцінка=${safeGrade}, Рівень=${safeLevel}`);
+
+    if (!currentUser.profile) currentUser.profile = {};
     
+    let currentGoldInDb = Number(currentUser.profile.gold);
+    if (isNaN(currentGoldInDb)) currentGoldInDb = 0;
+
+    currentUser.profile.gold = currentGoldInDb + safeAmount;
+
+    if (!currentUser.profile.progress) currentUser.profile.progress = {};
+    const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
+    
+    if (safeLevel >= currentMax) {
+         currentUser.profile.progress.maxLevel = safeLevel + 1;
+    }
+
+    await saveUserData(currentUser);
+    updateHomeDisplay(currentUser);
+
+    // Зберігаємо історію
     try {
-        await updateDoc(userRef, {
-            "profile.gold": increment(safeAmount), 
-            [`profile.progress.level_${safeLevel}`]: safeGrade, 
-            "profile.progress.maxLevel": increment(0) // Просто трігер
-        });
-
-        // Оновлюємо локальний об'єкт для миттєвої реакції
-        currentUser.profile.gold += safeAmount;
-        
-        // Перевірка макс. рівня локально
-        if (!currentUser.profile.progress) currentUser.profile.progress = {};
-        const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
-        if (safeLevel >= currentMax) {
-             currentUser.profile.progress.maxLevel = safeLevel + 1;
-             await updateDoc(userRef, { "profile.progress.maxLevel": safeLevel + 1 });
-        }
-
-        // 2. Історія (для вчителя)
+        const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
         await addDoc(collection(db, "game_results"), {
             userId: currentUser.uid,
             userName: currentUser.name,
@@ -98,18 +91,13 @@ async function handleLevelComplete(amount, grade, levelCompleted) {
             level: safeLevel,
             grade: safeGrade,
             goldEarned: safeAmount,
-            timestamp: serverTimestamp()
+            timestamp: new Date()
         });
+    } catch (e) { console.error("History save error:", e); }
 
-        alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет`);
-        
-        // Оновити рейтинг через секунду
-        setTimeout(() => renderLeaderboard(currentUser), 1500);
-
-    } catch (e) {
-        console.error("❌ Save Error:", e);
-        alert("Помилка збереження результату. Перевірте інтернет.");
-    }
+    alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет`);
+    
+    setTimeout(() => renderLeaderboard(currentUser), 1500);
 }
 
 async function saveUserData(user) {
@@ -117,7 +105,6 @@ async function saveUserData(user) {
     if (user.uid) {
         try {   
             const userRef = doc(db, "users", user.uid);
-            // Зберігаємо весь профіль, включаючи новий аватар
             await updateDoc(userRef, { profile: user.profile });
         } catch (e) { console.error("Save Error:", e); }
     }
@@ -129,7 +116,7 @@ async function saveUserData(user) {
 export async function initStudentPanel() {
     console.log("StudentPanel: Init...");
     
-    // 1. Завантаження налаштувань гри
+    // Завантаження конфігу гри
     try {
         const configRef = doc(db, "game_config", "maze_1");
         const configSnap = await getDoc(configRef);
@@ -141,60 +128,34 @@ export async function initStudentPanel() {
     let user = getCurrentUser();
     if (!user) return;
 
-    // 2. Початкове оновлення інтерфейсу
+    // 👇 ВАЖЛИВО: Завантажуємо магазин один раз і зберігаємо в змінну
+    try {
+        cachedShopItems = await getShopItems();
+    } catch (e) {
+        console.error("Shop load error", e);
+        cachedShopItems = { micro: [], medium: [], large: [] };
+    }
+
+    // Оновлення інтерфейсу (тепер товари вже є в cachedShopItems)
     updateHomeDisplay(user);
     renderLeaderboard(user);
+
+    // Ініціалізація системи аватарів
     setupAvatarSystem(user);
+
+    // Магазин (використовуємо кеш)
+    if (cachedShopItems) {
+        renderShopSection("rewards-micro-list", cachedShopItems.micro);
+        renderShopSection("rewards-medium-list", cachedShopItems.medium);
+        renderShopSection("rewards-large-list", cachedShopItems.large);
+    }
+
+    // Підключення кнопок Unity
     setupUnityUI();
-
-    // 3. Магазин
-    const shopItems = getShopItems();
-    renderShopSection("rewards-micro-list", shopItems.micro);
-    renderShopSection("rewards-medium-list", shopItems.medium);
-    renderShopSection("rewards-large-list", shopItems.large);
-
-    // 4. 🔥 ЖИВЕ ОНОВЛЕННЯ ЗОЛОТА (Найважливіша частина)
-    // Вимикаємо старого слухача, якщо він був
-    if (unsubscribeGold) unsubscribeGold();
-
-    const userRef = doc(db, "users", user.uid);
-    unsubscribeGold = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const newGold = data.profile?.gold || 0;
-            const newInventory = data.profile?.inventory || [];
-
-            // Оновлюємо UI (Текст + Анімація)
-            const goldEl = document.getElementById("student-gold-display");
-            if (goldEl) {
-                // Якщо баланс змінився, робимо "пульсацію"
-                if (goldEl.innerText !== `${newGold} 💰`) {
-                    goldEl.style.transition = "transform 0.2s ease, color 0.2s ease";
-                    goldEl.style.color = "#2ecc71"; // Зелений
-                    goldEl.style.transform = "scale(1.3)";
-                    
-                    setTimeout(() => {
-                        goldEl.style.color = ""; 
-                        goldEl.style.transform = "scale(1)";
-                    }, 500);
-                }
-                goldEl.innerText = `${newGold} 💰`;
-            }
-
-            // 🔥 ВАЖЛИВО: Оновлюємо дані в пам'яті браузера
-            // Це потрібно, щоб магазин "знав", що у нас з'явилися гроші
-            user.profile.gold = newGold;
-            user.profile.inventory = newInventory;
-            localStorage.setItem("currentUser", JSON.stringify(user));
-            
-            // Якщо змінився інвентар (хтось купив щось), перемалювати його
-            renderInventory(user);
-        }
-    });
 }
 
 // ==========================================
-// 🦁 СИСТЕМА АВАТАРІВ (НОВА)
+// 🦁 СИСТЕМА АВАТАРІВ
 // ==========================================
 function setupAvatarSystem(user) {
     const editBtn = document.getElementById("btn-edit-avatar");
@@ -211,13 +172,11 @@ function openAvatarModal() {
 
     if (!container) return;
 
-    // 🔥 FIX: Авто-виправлення шляху і тут, щоб в модалці виділявся правильний
     let currentAvatar = user.profile.avatar || DEFAULT_AVATAR;
     if (currentAvatar.includes('assets/avatars/')) {
         currentAvatar = currentAvatar.replace('assets/avatars/', 'assets/img/');
     }
 
-    // Генеруємо HTML для модалки
     let avatarsHtml = AVAILABLE_AVATARS.map(src => `
         <div class="avatar-option ${src === currentAvatar ? 'selected' : ''}" onclick="selectAvatar('${src}')">
             <img src="${src}" alt="avatar">
@@ -244,20 +203,14 @@ function openAvatarModal() {
         const currentUser = getCurrentUser();
         currentUser.profile.avatar = newSrc;
         
-        // Оновлюємо вигляд зразу
         updateHomeDisplay(currentUser);
-        
-        // Закриваємо модалку
         window.closeAvatarModal();
-        
-        // Зберігаємо в БД
         await saveUserData(currentUser);
-        console.log("Avatar updated:", newSrc);
     };
 }
 
 // ==========================================
-// 🎮 ЛОГІКА UNITY (IFRAME)
+// 🎮 ЛОГІКА UNITY
 // ==========================================
 function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
@@ -283,12 +236,12 @@ function setupUnityUI() {
 
                 let iframe = unityContainer.querySelector("iframe");
                 if (!iframe) {
-                     iframe = document.createElement("iframe");
-                     iframe.src = "unity/index.html?v=" + new Date().getTime(); 
-                     iframe.style.width = "100%";
-                     iframe.style.height = "100%";
-                     iframe.style.border = "none";
-                     unityContainer.appendChild(iframe);
+                      iframe = document.createElement("iframe");
+                      iframe.src = "unity/index.html?v=" + new Date().getTime(); 
+                      iframe.style.width = "100%";
+                      iframe.style.height = "100%";
+                      iframe.style.border = "none";
+                      unityContainer.appendChild(iframe);
                 }
             }
         };
@@ -344,26 +297,20 @@ async function renderLeaderboard(currentUser) {
             where("teacherUid", "==", currentUser.teacherUid)
         );
         const querySnapshot = await getDocs(q);
-        let classmates = []; // Використовуємо let, щоб можна було модифікувати
+        let classmates = [];
 
-        // 1. Отримуємо дані та чистимо їх від "сміття" (NaN)
         querySnapshot.forEach((doc) => {
             const data = doc.data();
-            
-            // 🔥 ВАЖЛИВО: Захист від NaN
             let safeGold = Number(data.profile?.gold);
-            if (isNaN(safeGold)) {
-                safeGold = 0; 
-            }
+            if (isNaN(safeGold)) { safeGold = 0; }
 
             classmates.push({ 
                 ...data, 
                 uid: doc.id, 
-                cleanGold: safeGold // Зберігаємо чисте значення для сортування
+                cleanGold: safeGold 
             });
         });
         
-        // 2. Сортуємо по чистому значенню
         classmates.sort((a, b) => b.cleanGold - a.cleanGold);
 
         if (classmates.length === 0) {
@@ -384,7 +331,6 @@ async function renderLeaderboard(currentUser) {
             tr.className = rankClass;
             if (student.uid === currentUser.uid) tr.classList.add("is-current-user");
 
-            // Перевірка аватара
             let ava = student.profile?.avatar || 'assets/img/boy.png';
             if (ava.includes('assets/avatars/')) {
                 ava = ava.replace('assets/avatars/', 'assets/img/');
@@ -411,7 +357,6 @@ async function renderLeaderboard(currentUser) {
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     
-    // --- Оновлюємо ім'я та аватар ---
     document.getElementById("student-name-display").textContent = currentUser.name;
     document.getElementById("student-class-display").textContent = currentUser.className || "--";
     
@@ -419,16 +364,11 @@ function updateHomeDisplay(currentUser) {
     if (avatarImg) {
         let path = currentUser.profile.avatar || DEFAULT_AVATAR;
 
-        // 🛠️ FIX: Авто-заміна старого шляху "avatars" на "img"
         if (path.includes('assets/avatars/')) {
             path = path.replace('assets/avatars/', 'assets/img/');
         }
-
         avatarImg.src = path;
-
-        // 🛠️ FIX: Якщо файл все одно не знайдено, ставимо запасний
         avatarImg.onerror = function() {
-            // Щоб не зациклилось
             if (this.src.includes('boy.png')) return; 
             this.src = 'assets/img/boy.png';
         };
@@ -441,6 +381,7 @@ function updateHomeDisplay(currentUser) {
         void goldEl.offsetWidth; 
         goldEl.classList.add("pulse");
     }
+    // 👇 Перемальовуємо інвентар
     renderInventory(currentUser);
 }
 
@@ -459,9 +400,12 @@ function renderInventory(currentUser) {
     listEl.style.display = "flex";
     listEl.innerHTML = "";
 
-    const shopDB = getShopItems();
+    // 👇 Використовуємо глобальну змінну, а не викликаємо функцію
+    const shopDB = cachedShopItems || { micro: [], medium: [], large: [] };
+
     const createColumn = (title, dbItems) => {
-        const itemsInCat = dbItems.filter(shopItem => userInv.some(uItem => uItem.name === shopItem.name));
+        const safeItems = dbItems || [];
+        const itemsInCat = safeItems.filter(shopItem => userInv.some(uItem => uItem.name === shopItem.name));
         let contentHtml = itemsInCat.length === 0 ? `<div class="inv-empty-category">Пусто...</div>` : "";
         
         itemsInCat.forEach(shopItem => {
@@ -485,6 +429,9 @@ function renderShopSection(containerId, items) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = "";
+    
+    if(!items) return;
+
     items.forEach(item => {
         const div = document.createElement("div");
         div.className = "shop-item";
@@ -498,36 +445,27 @@ function renderShopSection(containerId, items) {
     });
 }
 
-async function buyItem(visualItem) {
-    // Отримуємо найсвіжіші дані (вони оновлюються через onSnapshot)
-    let u = getCurrentUser(); 
-    const realItem = findItemById(visualItem.id);
+function buyItem(visualItem) {
+    let u = getCurrentUser();
     
-    if (!realItem) return;
+    // 👇 Використовуємо findItemInList та cachedShopItems
+    const realItem = findItemInList(cachedShopItems, visualItem.id);
     
-    if (u.profile.gold >= realItem.price) {
-        // 1. Списання золота (оптимістичне оновлення)
-        const newGold = u.profile.gold - realItem.price;
-        
-        // 2. Додавання предмету
-        if (!u.profile.inventory) u.profile.inventory = [];
-        const newItem = { id: realItem.id, name: realItem.name, date: new Date().toISOString() };
-        
-        // 3. Збереження в базу
-        try {
-            const userRef = doc(db, "users", u.uid);
-            await updateDoc(userRef, {
-                "profile.gold": newGold,
-                "profile.inventory": [...u.profile.inventory, newItem]
-            });
+    if (!realItem) {
+        console.error("Item not found in cache");
+        return;
+    }
 
-            alert(`Придбано: ${realItem.name}!`);
-            // Функція initStudentPanel (через onSnapshot) сама побачить зміни і оновить UI
-            
-        } catch (e) {
-            console.error(e);
-            alert("Помилка покупки. Спробуйте ще раз.");
-        }
+    if (u.profile.gold >= realItem.price) {
+        if (!confirm(`Купити "${realItem.name}" за ${realItem.price} золота?`)) return;
+
+        u.profile.gold -= realItem.price;
+        if (!u.profile.inventory) u.profile.inventory = [];
+        u.profile.inventory.push({ id: realItem.id, name: realItem.name, date: new Date().toISOString() });
+        
+        saveUserData(u);
+        updateHomeDisplay(u);
+        alert(`Придбано: ${realItem.name}!`);
     } else {
         alert("Недостатньо золота!");
     }

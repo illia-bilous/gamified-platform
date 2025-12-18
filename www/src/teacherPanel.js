@@ -1,5 +1,3 @@
-// src/teacherPanel.js
-
 import { db } from "./firebase.js";
 import { getCurrentUser } from "./auth.js"; 
 import { 
@@ -14,7 +12,8 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-import { getShopItems, updateItemPrice } from "./shopData.js"; 
+// 👇 ВИПРАВЛЕНО: Імпортуємо правильну назву функції (як у shopData.js)
+import { getShopItems, updateItemPriceInDB } from "./shopData.js"; 
 
 // --- ФУНКЦІЯ ЗАПУСКУ ---
 export function initTeacherPanel() {
@@ -22,12 +21,12 @@ export function initTeacherPanel() {
     const user = getCurrentUser();
     if (!user || user.role !== 'teacher') return;
 
-    // Відображення імені та
+    // Відображення імені та ID
     const nameEl = document.getElementById("panel-teacher-name");
     const codeEl = document.getElementById("panel-teacher-code");
 
-    if (nameEl) nameEl.textContent = user.name; // Виводимо ім'я
-    if (codeEl) codeEl.textContent = user.teacherCode || "Error"; // Виводимо ID
+    if (nameEl) nameEl.textContent = user.name; 
+    if (codeEl) codeEl.textContent = user.teacherCode || "Error"; 
    
     // 1. Головна панель (Класи)
     renderTeacherDashboard("teacher-content"); 
@@ -46,7 +45,6 @@ export function initTeacherPanel() {
 // ==========================================
 // 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ (КЛАСИ)
 // ==========================================
-// (Цей блок без змін, як у вас)
 
 async function getUniqueClasses(teacherId) {
     const q = query(collection(db, "users"), where("role", "==", "student"), where("teacherUid", "==", teacherId));
@@ -242,11 +240,9 @@ async function renderStudentProfile(student) {
 // ==========================================
 
 async function renderLevelEditor() {
-    // Шукаємо контейнер (id в HTML має бути "view-tasks")
     const container = document.getElementById("view-tasks"); 
     if (!container) return;
 
-    // 1. Структура HTML
     container.innerHTML = `
         <div class="teacher-header" style="text-align:center;">
             <h2>📝 Конструктор Рівнів</h2>
@@ -320,7 +316,6 @@ async function renderLevelEditor() {
         </div>
     `;
 
-    // 2. Ініціалізація логіки
     setupLevelEditorLogic();
 }
 
@@ -348,11 +343,10 @@ function setupLevelEditorLogic() {
 
         if (!qVal || !aVal) { 
             validationMsg.innerHTML = ""; 
-            cInput.style.border = "2px solid #2ecc71"; // Зелений за замовчуванням поки пусто
+            cInput.style.border = "2px solid #2ecc71";
             return; 
         }
 
-        // Ігноруємо текст (якщо це не x)
         if (/[a-wy-zA-WY-Zа-яА-Я]/.test(aVal)) {
             validationMsg.innerHTML = "ℹ️ Текстова відповідь (без перевірки)";
             validationMsg.style.color = "#3498db";
@@ -361,23 +355,18 @@ function setupLevelEditorLogic() {
         }
 
         try {
-            // Динамічний імпорт бібліотеки Math.js
             const math = await import('https://esm.run/mathjs');
             
             let isCorrect = false;
 
-            // 1. Якщо це рівняння (містить =)
             if (qVal.includes('=')) {
                 const parts = qVal.split('=');
-                // Підставляємо відповідь замість 'x'
                 const scope = { x: parseFloat(aVal) };
                 const left = math.evaluate(parts[0], scope);
                 const right = math.evaluate(parts[1], scope);
                 
-                // Порівнюємо ліву і праву частини
                 if (math.abs(left - right) < 0.01) isCorrect = true;
             } 
-            // 2. Якщо це вираз (напр. "2 + 2")
             else {
                 const res = math.evaluate(qVal);
                 if (math.abs(res - parseFloat(aVal)) < 0.01) isCorrect = true;
@@ -394,19 +383,17 @@ function setupLevelEditorLogic() {
             }
 
         } catch (e) {
-            // Якщо не вдалося порахувати (складна формула) - не блокуємо
             validationMsg.innerHTML = "";
             cInput.style.border = "2px solid #2ecc71";
         }
     };
 
-    // Слухаємо зміни в полях для валідації
     qInput.addEventListener("input", validateMath);
     cInput.addEventListener("input", validateMath);
 
     // --- ЛОГІКА ЗАВАНТАЖЕННЯ ---
     btnLoad.onclick = async () => {
-        const key = `${topicSel.value}_${levelSel.value}`; // Напр: "Fractions_1"
+        const key = `${topicSel.value}_${levelSel.value}`; 
         
         statusText.textContent = "⏳ Завантаження...";
         formArea.style.opacity = "0.5";
@@ -415,15 +402,14 @@ function setupLevelEditorLogic() {
             const docRef = doc(db, "teacher_configs", user.uid);
             const docSnap = await getDoc(docRef);
 
-            // Очищення полів
             qInput.value = "";
             cInput.value = "";
             wInputs.forEach(i => i.value = "");
             validationMsg.innerHTML = "";
             
-            // --- АВТО-ЗАПОВНЕННЯ ДЕФОЛТІВ ---
+            // Default values
             if (levelSel.value === "3") {
-                goldInput.value = "300"; // Бонус за складність
+                goldInput.value = "300"; 
             } else {
                 goldInput.value = "100";
             }
@@ -455,7 +441,7 @@ function setupLevelEditorLogic() {
 
             formArea.style.opacity = "1";
             formArea.style.pointerEvents = "auto";
-            validateMath(); // Перевірити валідацію одразу після завантаження
+            validateMath(); 
 
         } catch (e) {
             console.error(e);
@@ -467,7 +453,6 @@ function setupLevelEditorLogic() {
     btnSave.onclick = async () => {
         const key = `${topicSel.value}_${levelSel.value}`;
         
-        // Збираємо неправильні відповіді (тільки ті, що не пусті)
         const wrongs = [];
         wInputs.forEach(input => {
             if(input.value.trim() !== "") wrongs.push(input.value.trim());
@@ -491,7 +476,6 @@ function setupLevelEditorLogic() {
         try {
             const docRef = doc(db, "teacher_configs", user.uid);
             
-            // Використовуємо merge: true, щоб не стерти налаштування інших рівнів
             await setDoc(docRef, {
                 [key]: dataToSave 
             }, { merge: true });
@@ -509,7 +493,7 @@ function setupLevelEditorLogic() {
 }
 
 // ==========================================
-// 💎 РЕДАКТОР СКАРБНИЦІ (БЕЗ ЗМІН)
+// 💎 РЕДАКТОР СКАРБНИЦІ
 // ==========================================
 async function renderTreasureEditor() {
     const container = document.getElementById("treasury-content");
@@ -523,24 +507,26 @@ async function renderTreasureEditor() {
         <div class="category-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
             <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
                 <h3 style="color: #2ecc71; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Мікро-нагороди</h3>
-                <div id="teacher-rewards-micro" class="rewards-editor-list"></div>
+                <div id="teacher-rewards-micro" class="rewards-editor-list">⏳ Завантаження...</div>
             </div>
             <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
                 <h3 style="color: #3498db; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Середні нагороди</h3>
-                <div id="teacher-rewards-medium" class="rewards-editor-list"></div>
+                <div id="teacher-rewards-medium" class="rewards-editor-list">⏳ Завантаження...</div>
             </div>
             <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
                 <h3 style="color: #9b59b6; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Великі нагороди</h3>
-                <div id="teacher-rewards-large" class="rewards-editor-list"></div>
+                <div id="teacher-rewards-large" class="rewards-editor-list">⏳ Завантаження...</div>
             </div>
         </div>
     `;
 
     try {
-        const items = getShopItems(); 
-        renderCategory("teacher-rewards-micro", items.micro);
-        renderCategory("teacher-rewards-medium", items.medium);
-        renderCategory("teacher-rewards-large", items.large);
+        const items = await getShopItems(); 
+        if (items) {
+            renderCategory("teacher-rewards-micro", items.micro || []);
+            renderCategory("teacher-rewards-medium", items.medium || []);
+            renderCategory("teacher-rewards-large", items.large || []);
+        }
     } catch (e) {
         console.error("Помилка завантаження товарів:", e);
     }
@@ -550,6 +536,11 @@ function renderCategory(containerId, itemList) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = ""; 
+
+    if (!itemList || itemList.length === 0) {
+        container.innerHTML = "<p style='text-align:center; color:#555;'>Пусто</p>";
+        return;
+    }
 
     itemList.forEach(item => {
         const div = document.createElement("div");
@@ -566,23 +557,43 @@ function renderCategory(containerId, itemList) {
                 </div>
             </div>
             <div class="item-desc" style="margin-bottom: 10px; font-size: 0.8rem; color: #bdc3c7;">${item.desc}</div>
-            <button class="btn-save-price" data-id="${item.id}" 
+            <button class="btn-save-price" id="btn-${item.id}"
                     style="width: 100%; padding: 8px; background: #27ae60; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; text-transform: uppercase;">
                 💾 Зберегти ціну
             </button>
         `;
 
         const btn = div.querySelector(".btn-save-price");
-        btn.onclick = () => {
+        
+        btn.onclick = async () => {
             const input = document.getElementById(`price-${item.id}`);
             const newPrice = parseInt(input.value);
-            if (isNaN(newPrice) || newPrice < 0) { alert("Некоректне число."); return; }
+            
+            if (isNaN(newPrice) || newPrice < 0) { 
+                alert("Некоректне число."); 
+                return; 
+            }
 
-            const success = updateItemPrice(item.id, newPrice);
+            btn.disabled = true;
+            btn.innerText = "⏳ Зберігаю...";
+            btn.style.backgroundColor = "#7f8c8d";
+
+            // 👇 ВИПРАВЛЕНО: Викликаємо правильну функцію
+            const success = await updateItemPriceInDB(item.id, newPrice);
+            
             if (success) {
-                alert(`Ціну на "${item.name}" оновлено до ${newPrice}!`);
+                btn.innerText = "✅ Збережено!";
                 btn.style.backgroundColor = "#1abc9c"; 
-                setTimeout(() => btn.style.backgroundColor = "#27ae60", 1000);
+                setTimeout(() => {
+                    btn.innerText = "💾 Зберегти ціну";
+                    btn.style.backgroundColor = "#27ae60";
+                    btn.disabled = false;
+                }, 2000);
+            } else {
+                alert("Помилка! Перевірте інтернет або консоль.");
+                btn.innerText = "💾 Зберегти ціну";
+                btn.style.backgroundColor = "#c0392b";
+                btn.disabled = false;
             }
         };
         container.appendChild(div);
