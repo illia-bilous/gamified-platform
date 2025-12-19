@@ -14,7 +14,8 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-import { getShopItems, updateItemPriceInDB } from "./shopData.js"; 
+// 👇 ОНОВЛЕНИЙ ІМПОРТ: saveShopItems замість updateItemPriceInDB
+import { getShopItems, saveShopItems } from "./shopData.js"; 
 
 // ==========================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ ВЧИТЕЛЯ
@@ -193,7 +194,7 @@ async function renderStudentProfile(student) {
         
     const goldDisplay = student.profile?.gold || 0; 
 
-    // 2. HTML Рендер (Чистий дизайн)
+    // 2. HTML Рендер
     container.innerHTML = `
         <div class="student-profile-view" style="color: white; padding: 10px; animation: fadeIn 0.3s ease;">
             
@@ -240,31 +241,12 @@ async function renderStudentProfile(student) {
     `;
 
     // 3. ЛОГІКА КНОПОК
-
-    // КНОПКА НАЗАД: Розумне повернення
     document.getElementById("btn-back-to-list").onclick = () => {
         const teacher = getCurrentUser();
-        const activeItem = document.querySelector('.menu-item.active');
-        const panelType = activeItem ? activeItem.getAttribute('data-panel') : 'classes';
-
-        console.log("Спроба повернення. Клас учня:", student.className);
-
-        // 1. Якщо ми в аналітиці — повертаємося в аналітику
-        if (panelType === 'analytics' && typeof loadTeacherAnalytics === 'function') {
-            loadTeacherAnalytics();
-            return;
-        }
-
-        // 2. Якщо ми знаємо клас учня — повертаємося до списку учнів цього класу
         if (student.className && typeof renderClassLeaderboard === 'function') {
-            console.log("Повернення до списку учнів класу:", student.className);
             renderClassLeaderboard(student.className);
-        } 
-        // 3. Якщо клас невідомий — повертаємося до загального списку класів
-        else if (typeof renderTeacherClasses === 'function') {
-            renderTeacherClasses(teacher.uid);
         } else {
-            document.querySelector('[data-panel="classes"]')?.click();
+            renderTeacherDashboard("teacher-content");
         }
     };
 
@@ -281,14 +263,11 @@ async function renderStudentProfile(student) {
         try {
             const studentRef = doc(db, "users", student.uid);
             await updateDoc(studentRef, { "profile.gold": newVal });
-            
             alert("✅ Баланс золота успішно змінено!");
             
-            // Оновлюємо об'єкт студента локально і перемальовуємо профіль
             const updatedStudent = { ...student };
             if (!updatedStudent.profile) updatedStudent.profile = {};
             updatedStudent.profile.gold = newVal;
-            
             renderStudentProfile(updatedStudent);
         } catch (e) {
             console.error("Firebase Update Error:", e);
@@ -296,6 +275,7 @@ async function renderStudentProfile(student) {
         }
     };
 }
+
 // ==========================================
 // 📝 КОНСТРУКТОР РІВНІВ (UNITY)
 // ==========================================
@@ -332,7 +312,6 @@ async function renderLevelEditor() {
                 <div style="margin-bottom: 20px;">
                     <label style="color: #2ecc71; font-weight:bold;">✅ Правильна відповідь:</label>
                     <input type="text" id="edit-correct" placeholder="3" style="width: 100%; padding: 12px; background: #1a1a1a; border: 2px solid #2ecc71; color: white;">
-                    <div id="math-validation-msg" style="font-size: 0.9em; margin-top: 5px; height: 1.2em; font-weight: bold;"></div>
                 </div>
                 <label style="color: #e74c3c; margin-bottom: 5px; display:block;">❌ Неправильні варіанти (Ключі-пастки):</label>
                 <div class="wrong-answers-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
@@ -358,7 +337,6 @@ async function renderLevelEditor() {
             </div>
         </div>
     `;
-
     setupLevelEditorLogic();
 }
 
@@ -373,161 +351,215 @@ function setupLevelEditorLogic() {
     const wInputs = document.querySelectorAll(".inp-wrong");
     const timeInput = document.getElementById("edit-time");
     const goldInput = document.getElementById("edit-gold");
-    const validationMsg = document.getElementById("math-validation-msg");
 
     // Функція завантаження
     btnLoad.onclick = async () => {
-    const topic = document.getElementById("editor-topic").value;
-    const levelNum = document.getElementById("editor-level").value;
-    statusText.textContent = "⏳ Завантаження...";
-    
-    try {
-        const docSnap = await getDoc(doc(db, "teacher_configs", user.uid));
-        if (docSnap.exists() && docSnap.data()[topic]) {
-            const topicData = docSnap.data()[topic];
-            const levelData = topicData.doors?.find(d => d.id == levelNum);
+        const topic = document.getElementById("editor-topic").value;
+        const levelNum = document.getElementById("editor-level").value;
+        statusText.textContent = "⏳ Завантаження...";
+        
+        try {
+            const docSnap = await getDoc(doc(db, "teacher_configs", user.uid));
+            if (docSnap.exists() && docSnap.data()[topic]) {
+                const topicData = docSnap.data()[topic];
+                const levelData = topicData.doors?.find(d => d.id == levelNum);
 
-            if (levelData) {
-                qInput.value = levelData.question;
-                cInput.value = levelData.answer;
-                wInputs.forEach((inp, i) => { inp.value = levelData.wrongAnswers[i] || ""; });
-                goldInput.value = topicData.reward;
-                timeInput.value = topicData.timeLimit;
-                statusText.textContent = "✅ Завантажено!";
+                if (levelData) {
+                    qInput.value = levelData.question;
+                    cInput.value = levelData.answer;
+                    wInputs.forEach((inp, i) => { inp.value = levelData.wrongAnswers[i] || ""; });
+                    goldInput.value = topicData.reward;
+                    timeInput.value = topicData.timeLimit;
+                    statusText.textContent = "✅ Завантажено!";
+                } else {
+                    statusText.textContent = "ℹ️ Рівень порожній.";
+                }
             } else {
-                statusText.textContent = "ℹ️ Рівень порожній.";
+                statusText.textContent = "ℹ️ Тема ще не створена.";
             }
-        } else {
-            statusText.textContent = "ℹ️ Тема ще не створена.";
-        }
-        formArea.style.opacity = "1";
-        formArea.style.pointerEvents = "auto";
-    } catch (e) { statusText.textContent = "❌ Помилка."; }
-};
+            formArea.style.opacity = "1";
+            formArea.style.pointerEvents = "auto";
+        } catch (e) { statusText.textContent = "❌ Помилка."; }
+    };
 
     // Функція збереження
     btnSave.onclick = async () => {
-    const topic = document.getElementById("editor-topic").value; // Напр: Fractions
-    const levelNum = parseInt(document.getElementById("editor-level").value); // Напр: 1
-    const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
+        const topic = document.getElementById("editor-topic").value;
+        const levelNum = parseInt(document.getElementById("editor-level").value);
+        const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
 
-    if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
+        if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
 
-    statusText.textContent = "⏳ Збереження...";
+        statusText.textContent = "⏳ Збереження...";
 
-    try {
-        const docRef = doc(db, "teacher_configs", user.uid);
-        const docSnap = await getDoc(docRef);
-        let currentData = docSnap.exists() ? docSnap.data() : {};
+        try {
+            const docRef = doc(db, "teacher_configs", user.uid);
+            const docSnap = await getDoc(docRef);
+            let currentData = docSnap.exists() ? docSnap.data() : {};
 
-        // 1. Створюємо структуру теми, якщо її немає
-        if (!currentData[topic]) {
-            currentData[topic] = { 
-                doors: [], 
-                reward: parseInt(goldInput.value) || 100, 
-                timeLimit: parseInt(timeInput.value) || 60 
+            if (!currentData[topic]) {
+                currentData[topic] = { 
+                    doors: [], 
+                    reward: parseInt(goldInput.value) || 100, 
+                    timeLimit: parseInt(timeInput.value) || 60 
+                };
+            }
+
+            const doorData = {
+                id: levelNum,
+                question: qInput.value.trim(),
+                answer: cInput.value.trim(),
+                wrongAnswers: wrongs
             };
+
+            const doors = currentData[topic].doors || [];
+            const index = doors.findIndex(d => d.id === levelNum);
+            
+            if (index > -1) {
+                doors[index] = doorData;
+            } else {
+                doors.push(doorData);
+            }
+
+            currentData[topic].doors = doors;
+            currentData[topic].reward = parseInt(goldInput.value) || 100;
+            currentData[topic].timeLimit = parseInt(timeInput.value) || 60;
+
+            await setDoc(docRef, currentData);
+            
+            statusText.textContent = "✅ Збережено для гри!";
+        } catch (e) {
+            console.error("Помилка Firebase:", e);
+            statusText.textContent = "❌ Помилка збереження.";
         }
-
-        // 2. Готуємо дані для конкретних дверей (рівня)
-        const doorData = {
-            id: levelNum,
-            question: qInput.value.trim(),
-            answer: cInput.value.trim(), // Unity шукає саме 'answer'
-            wrongAnswers: wrongs
-        };
-
-        // 3. Оновлюємо або додаємо рівень у масив
-        const doors = currentData[topic].doors || [];
-        const index = doors.findIndex(d => d.id === levelNum);
-        
-        if (index > -1) {
-            doors[index] = doorData;
-        } else {
-            doors.push(doorData);
-        }
-
-        currentData[topic].doors = doors;
-        currentData[topic].reward = parseInt(goldInput.value) || 100;
-        currentData[topic].timeLimit = parseInt(timeInput.value) || 60;
-
-        // 4. Зберігаємо весь об'єкт теми
-        await setDoc(docRef, currentData);
-        
-        statusText.textContent = "✅ Збережено для гри!";
-        console.log("Дані оновлено для Unity:", currentData[topic]);
-    } catch (e) {
-        console.error("Помилка Firebase:", e);
-        statusText.textContent = "❌ Помилка збереження.";
-    }
-};
+    };
 }
 
 // ==========================================
-// 💎 РЕДАКТОР СКАРБНИЦІ (ЦІНИ)
+// 💎 РЕДАКТОР СКАРБНИЦІ (ПОВНА ВЕРСІЯ)
 // ==========================================
 async function renderTreasureEditor() {
     const container = document.getElementById("treasury-content");
     if (!container) return;
 
     container.innerHTML = `
-        <div class="teacher-header" style="text-align: center;">
-            <h2 style="color: var(--accent-gold);">💎 РЕДАГУВАННЯ СКАРБНИЦІ</h2>
+        <div class="teacher-header" style="text-align: center; margin-bottom: 30px;">
+            <h2 style="color: var(--accent-gold); font-size: 2em; margin-bottom: 10px;">💎 Редактор Скарбниці</h2>
+            <p style="color: #aaa;">Налаштуйте товари, які зможуть купувати ваші учні.</p>
         </div>
-        <div class="category-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
-                <h3 style="color: #2ecc71;">Мікро</h3>
-                <div id="teacher-rewards-micro">⏳</div>
-            </div>
-            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
-                <h3 style="color: #3498db;">Середні</h3>
-                <div id="teacher-rewards-medium">⏳</div>
-            </div>
-            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
-                <h3 style="color: #9b59b6;">Великі</h3>
-                <div id="teacher-rewards-large">⏳</div>
-            </div>
+        <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
+            <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
         </div>
     `;
 
+    const user = getCurrentUser();
+    if (!user) return;
+
     try {
-        const items = await getShopItems(); 
-        if (items) {
-            renderCategory("teacher-rewards-micro", items.micro || []);
-            renderCategory("teacher-rewards-medium", items.medium || []);
-            renderCategory("teacher-rewards-large", items.large || []);
-        }
-    } catch (e) { console.error(e); }
+        // Завантажуємо дані САМЕ ЦЬОГО вчителя (або стандартні, якщо пусто)
+        const shopData = await getShopItems(user.uid);
+        
+        const grid = document.getElementById("treasury-grid-editor");
+        grid.innerHTML = ""; // Очистити лоадер
+
+        // Функція збереження, яка оновлює загальний об'єкт і відправляє в базу
+        const handleSave = async (updatedData) => {
+            await saveShopItems(user.uid, updatedData);
+        };
+
+        // Рендер трьох колонок
+        renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71");
+        renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db");
+        renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6");
+
+    } catch (e) { 
+        console.error("Error loading shop:", e);
+        container.innerHTML += `<p style="color:red; text-align:center;">Помилка завантаження: ${e.message}</p>`;
+    }
 }
 
-function renderCategory(containerId, itemList) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.innerHTML = ""; 
+// Допоміжна функція для рендеру колонки редагування
+function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color) {
+    const col = document.createElement("div");
+    col.style.cssText = "flex: 1; min-width: 300px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
+    
+    col.innerHTML = `<h3 style="color: ${color}; margin-bottom: 15px; text-align: center;">${title}</h3>`;
+    
+    const list = fullShopData[categoryKey] || [];
 
-    itemList.forEach(item => {
-        const div = document.createElement("div");
-        div.className = "shop-item";
-        div.style.cssText = "background: #2c3e50; padding: 10px; margin-bottom: 10px; border-radius: 8px;";
-        div.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <span style="font-weight: bold;">${item.name}</span>
-                <input type="number" id="price-${item.id}" value="${item.price}" style="width: 60px; background: #111; color: #f1c40f; border: none; text-align: center;">
+    list.forEach((item, index) => {
+        const card = document.createElement("div");
+        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333;";
+        
+        card.innerHTML = `
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Назва товару:</label>
+                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 8px; background: #111; color: white; border: 1px solid #444; border-radius: 5px;">
             </div>
-            <button class="btn-save-price" style="width: 100%; background: #27ae60; color: white; border: none; padding: 5px; cursor: pointer;">💾 Зберегти</button>
+            
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Опис:</label>
+                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 8px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 5px;">
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="width: 45%;">
+                    <label style="font-size: 0.8em; color: #f1c40f; display: block; margin-bottom: 2px;">Ціна (💰):</label>
+                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 8px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 5px; font-weight: bold;">
+                </div>
+                <button class="btn-save-item" style="width: 45%; padding: 8px; background: ${color}; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    💾 Зберегти
+                </button>
+            </div>
+            <div class="save-feedback" style="text-align: center; font-size: 0.8em; margin-top: 5px; height: 1.2em;"></div>
         `;
 
-        const btn = div.querySelector("button");
+        const btn = card.querySelector(".btn-save-item");
+        const feedback = card.querySelector(".save-feedback");
+
         btn.onclick = async () => {
-            const newPrice = parseInt(document.getElementById(`price-${item.id}`).value);
-            btn.disabled = true;
-            btn.innerText = "⏳...";
-            const success = await updateItemPriceInDB(item.id, newPrice);
-            if (success) {
-                btn.innerText = "✅";
-                setTimeout(() => { btn.innerText = "💾 Зберегти"; btn.disabled = false; }, 2000);
+            // 1. Збираємо дані з полів
+            const newName = card.querySelector(".inp-name").value;
+            const newDesc = card.querySelector(".inp-desc").value;
+            const newPrice = parseInt(card.querySelector(".inp-price").value);
+
+            if (!newName || isNaN(newPrice)) {
+                alert("Назва і ціна обов'язкові!");
+                return;
             }
+
+            btn.disabled = true;
+            btn.style.opacity = "0.5";
+            feedback.textContent = "Збереження...";
+
+            // 2. Оновлюємо локальний об'єкт даних
+            fullShopData[categoryKey][index] = {
+                id: item.id, // ID не змінюємо
+                name: newName,
+                desc: newDesc,
+                price: newPrice
+            };
+
+            // 3. Відправляємо весь об'єкт на збереження
+            const success = await onSave(fullShopData);
+
+            if (success) {
+                feedback.textContent = "✅ Зміни збережено!";
+                feedback.style.color = "#2ecc71";
+            } else {
+                feedback.textContent = "❌ Помилка!";
+                feedback.style.color = "#e74c3c";
+            }
+
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.style.opacity = "1";
+                feedback.textContent = "";
+            }, 2000);
         };
-        container.appendChild(div);
+
+        col.appendChild(card);
     });
+
+    parent.appendChild(col);
 }
