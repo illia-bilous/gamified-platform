@@ -1,3 +1,5 @@
+// src/teacherPanel.js
+
 import { db } from "./firebase.js";
 import { getCurrentUser } from "./auth.js"; 
 import { 
@@ -12,46 +14,49 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// 👇 ВИПРАВЛЕНО: Імпортуємо правильну назву функції (як у shopData.js)
 import { getShopItems, updateItemPriceInDB } from "./shopData.js"; 
 
-// --- ФУНКЦІЯ ЗАПУСКУ ---
+// ==========================================
+// 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ ВЧИТЕЛЯ
+// ==========================================
 export function initTeacherPanel() {
     console.log("TeacherPanel: Init...");
     const user = getCurrentUser();
     if (!user || user.role !== 'teacher') return;
 
-    // Відображення імені та ID
     const nameEl = document.getElementById("panel-teacher-name");
     const codeEl = document.getElementById("panel-teacher-code");
 
     if (nameEl) nameEl.textContent = user.name; 
     if (codeEl) codeEl.textContent = user.teacherCode || "Error"; 
    
-    // 1. Головна панель (Класи)
+    // Завантаження блоків
     renderTeacherDashboard("teacher-content"); 
 
-    // 2. Редактор Скарбниці
     setTimeout(() => {
         renderTreasureEditor();
     }, 100); 
 
-    // 3. 🔥 Новий Редактор Рівнів
     setTimeout(() => {
         renderLevelEditor();
     }, 100);
 }
 
 // ==========================================
-// 📚 ГОЛОВНА ПАНЕЛЬ ВЧИТЕЛЯ (КЛАСИ)
+// 📚 МОЇ КЛАСИ ТА ДЕШБОРД
 // ==========================================
-
 async function getUniqueClasses(teacherId) {
     const q = query(collection(db, "users"), where("role", "==", "student"), where("teacherUid", "==", teacherId));
     const usersSnapshot = await getDocs(q);
     const classes = new Set(); 
     let studentCount = 0;
-    usersSnapshot.forEach(doc => { const data = doc.data(); if (data.className) { classes.add(data.className); studentCount++; } });
+    usersSnapshot.forEach(doc => { 
+        const data = doc.data(); 
+        if (data.className) { 
+            classes.add(data.className); 
+            studentCount++; 
+        } 
+    });
     return { classes: Array.from(classes), totalStudents: studentCount }; 
 }
 
@@ -86,9 +91,8 @@ export async function renderTeacherDashboard(containerId) {
 }
 
 // ==========================================
-// 🏆 ЛІДЕРБОРД КЛАСУ
+// 🏆 АНАЛІТИКА ТА ЛІДЕРБОРД КЛАСУ
 // ==========================================
-
 async function renderClassLeaderboard(className) {
     const container = document.getElementById("teacher-content");
     if (!container) return;
@@ -136,17 +140,15 @@ async function renderClassLeaderboard(className) {
 
     students.forEach((student, index) => {
         const tr = document.createElement("tr");
-        let rankClass = "rank-other"; 
         let rankIcon = `#${index + 1}`;
-        if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
-        else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
-        else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
+        if (index === 0) rankIcon = "👑 1";
+        else if (index === 1) rankIcon = "🥈 2";
+        else if (index === 2) rankIcon = "🥉 3";
 
-        tr.className = rankClass;
         tr.innerHTML = `
             <td class="rank-col" style="font-weight:bold;">${rankIcon}</td>
             <td class="name-col" style="font-size: 1.1em; color: white;">${student.name}</td>
-            <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.profile.gold || 0} 💰</td>
+            <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.profile?.gold || 0} 💰</td>
             <td class="action-col">
                 <button class="btn btn-sm btn-view-profile" data-uid="${student.uid}" style="background: rgba(255,255,255,0.1); border: 1px solid #777;">Профіль</button>
             </td>
@@ -158,9 +160,8 @@ async function renderClassLeaderboard(className) {
 }
 
 // ==========================================
-// 👤 ПРОФІЛЬ УЧНЯ
+// 👤 КЕРУВАННЯ ПРОФІЛЕМ УЧНЯ
 // ==========================================
-
 function setupProfileView(students) {
     document.querySelectorAll('.btn-view-profile').forEach(button => {
         button.addEventListener('click', (e) => {
@@ -175,70 +176,129 @@ async function renderStudentProfile(student) {
     const container = document.getElementById("teacher-content");
     if (!container) return;
 
-    const inventory = student.profile.inventory || [];
+    // 1. Підготовка даних (Інвентар)
+    const inventory = student.profile?.inventory || [];
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
         acc[itemName] = (acc[itemName] || 0) + 1;
         return acc;
     }, {});
-    
+
     const inventoryList = Object.keys(stackedInventory).length > 0
-        ? Object.keys(stackedInventory).map(name => `<li>${name} (x${stackedInventory[name]})</li>`).join('')
-        : '<li>Нагороди ще не придбані.</li>';
+        ? Object.keys(stackedInventory).map(name => `
+            <div style="background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; font-size: 0.9em; text-align: left; color: #ecf0f1; border-left: 4px solid #3498db;">
+                ${name} (x${stackedInventory[name]})
+            </div>`).join('')
+        : '<p style="opacity: 0.5; font-style: italic; padding: 20px;">Нагороди ще не придбані</p>';
         
-    let goldDisplay = student.profile.gold || 0; 
+    const goldDisplay = student.profile?.gold || 0; 
 
+    // 2. HTML Рендер (Чистий дизайн)
     container.innerHTML = `
-        <div class="teacher-header" style="text-align: center;">
-            <button id="btn-back-to-leaderboard" class="btn btn-secondary" style="float: left;">← Назад</button>
-            <h2 style="font-size: 2em; margin-bottom: 5px;">👤 ПРОФІЛЬ УЧНЯ</h2>
-            <h1 style="color: var(--accent-gold);">${student.name}</h1>
-            <p style="margin-bottom: 30px;">ID: <span style="font-family: monospace;">${student.loginID || "N/A"}</span></p>
-        </div>
+        <div class="student-profile-view" style="color: white; padding: 10px; animation: fadeIn 0.3s ease;">
+            
+            <button id="btn-back-to-list" class="btn" style="width: 100%; max-width: 600px; display: block; margin: 0 auto 30px; background: #ffffff; color: #2c3e50; font-weight: bold; border: none; padding: 15px; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s;">
+                ← ПОВЕРНУТИСЯ ДО СПИСКУ
+            </button>
 
-        <div class="profile-dashboard-grid">
-            <div class="card profile-info-card" style="padding: 20px;">
-                <h3 style="color: var(--primary-color);">Основні Дані</h3>
-                <div class="info-line"><strong>🎓 Клас:</strong> ${student.className}</div>
-                <div class="info-line"><strong>📧 Логін:</strong> ${student.loginID || student.email}</div>
+            <div style="text-align: center; margin-bottom: 40px;">
+                <h1 style="color: #f1c40f; margin-bottom: 5px; font-size: 2.8em; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">${student.name}</h1>
+                <p style="opacity: 0.4; font-size: 1em; letter-spacing: 1px;">ID: ${student.loginID || "N/A"}</p>
             </div>
 
-            <div class="card profile-rewards-card" style="padding: 20px;">
-                <h3 style="color: var(--accent-gold); text-align: center;">💰 Баланс Золота</h3>
-                <p id="current-gold-display" class="big-gold-amount" style="font-size: 3em; font-weight: bold; text-align: center; color: var(--accent-gold);">${goldDisplay} 💰</p>
+            <div style="display: flex; gap: 30px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
                 
-                <div class="gold-editor-controls" style="margin-bottom: 20px; text-align: center;">
-                    <input type="number" id="gold-amount-input" placeholder="Нова кількість" style="width: 50%; padding: 8px; border-radius: 5px;">
-                    <button id="btn-update-gold" class="btn btn-sm" style="background-color: #f39c12; color: white;">Оновити</button>
+                <div style="background: #1e1e1e; padding: 30px; border-radius: 20px; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #333;">
+                    <h3 style="color: #3498db; margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                        <span>📋</span> Основні Дані
+                    </h3>
+                    <p style="margin: 20px 0; font-size: 1.1em;">🎓 <b>Клас:</b> <span style="color: #3498db;">${student.className}</span></p>
+                    <p style="margin: 20px 0; font-size: 1.1em;">🆔 <b>Логін:</b> <span style="color: #3498db;">${student.loginID}</span></p>
                 </div>
-                
-                <h3 style="color: var(--primary-color); text-align: center;">🎁 Інвентар</h3>
-                <ul class="rewards-list">${inventoryList}</ul>
+
+                <div style="background: #1e1e1e; padding: 30px; border-radius: 20px; width: 340px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #333;">
+                    <h3 style="color: #f1c40f; margin-top: 0; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <span>💰</span> Баланс Золота
+                    </h3>
+                    
+                    <div style="font-size: 4em; font-weight: bold; color: #f1c40f; margin-bottom: 25px; text-shadow: 0 0 15px rgba(241, 196, 15, 0.4);">
+                        ${goldDisplay}
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: center; margin-bottom: 35px;">
+                        <input type="number" id="gold-input" placeholder="Сума" style="width: 110px; background: #000; color: #f1c40f; border: 2px solid #444; padding: 12px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 1.1em;">
+                        <button id="btn-save-gold" class="btn" style="background: #1abc9c; color: white; padding: 12px 20px; border-radius: 10px; font-weight: bold; border: none; cursor: pointer; box-shadow: 0 4px 0 #16a085;">ОНОВИТИ</button>
+                    </div>
+
+                    <h3 style="color: #3498db; border-top: 1px solid #333; padding-top: 25px; margin-top: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <span>🎁</span> Інвентар
+                    </h3>
+                    <div id="inventory-container" style="max-height: 250px; overflow-y: auto;">${inventoryList}</div>
+                </div>
             </div>
         </div>
     `;
 
-    document.getElementById("btn-update-gold").addEventListener('click', async () => {
-        const inputElement = document.getElementById("gold-amount-input");
-        const newGoldValue = parseInt(inputElement.value);
-        if (isNaN(newGoldValue) || newGoldValue < 0) { alert("Введіть коректне число."); return; }
+    // 3. ЛОГІКА КНОПОК
+
+    // КНОПКА НАЗАД: Розумне повернення
+    document.getElementById("btn-back-to-list").onclick = () => {
+        const teacher = getCurrentUser();
+        const activeItem = document.querySelector('.menu-item.active');
+        const panelType = activeItem ? activeItem.getAttribute('data-panel') : 'classes';
+
+        console.log("Спроба повернення. Клас учня:", student.className);
+
+        // 1. Якщо ми в аналітиці — повертаємося в аналітику
+        if (panelType === 'analytics' && typeof loadTeacherAnalytics === 'function') {
+            loadTeacherAnalytics();
+            return;
+        }
+
+        // 2. Якщо ми знаємо клас учня — повертаємося до списку учнів цього класу
+        if (student.className && typeof renderClassLeaderboard === 'function') {
+            console.log("Повернення до списку учнів класу:", student.className);
+            renderClassLeaderboard(student.className);
+        } 
+        // 3. Якщо клас невідомий — повертаємося до загального списку класів
+        else if (typeof renderTeacherClasses === 'function') {
+            renderTeacherClasses(teacher.uid);
+        } else {
+            document.querySelector('[data-panel="classes"]')?.click();
+        }
+    };
+
+    // ОНОВЛЕННЯ ЗОЛОТА
+    document.getElementById("btn-save-gold").onclick = async () => {
+        const input = document.getElementById("gold-input");
+        const newVal = parseInt(input.value);
+        
+        if (isNaN(newVal) || newVal < 0) {
+            alert("⚠️ Будь ласка, введіть число (0 або більше)");
+            return;
+        }
 
         try {
             const studentRef = doc(db, "users", student.uid);
-            await updateDoc(studentRef, { "profile.gold": newGoldValue });
-            document.getElementById("current-gold-display").innerHTML = `${newGoldValue} 💰`;
-            inputElement.value = ''; 
-            alert(`Баланс оновлено!`);
-        } catch (error) { console.error("Помилка:", error); alert("Помилка оновлення."); }
-    });
-    
-    document.getElementById("btn-back-to-leaderboard").onclick = () => renderClassLeaderboard(student.className);
+            await updateDoc(studentRef, { "profile.gold": newVal });
+            
+            alert("✅ Баланс золота успішно змінено!");
+            
+            // Оновлюємо об'єкт студента локально і перемальовуємо профіль
+            const updatedStudent = { ...student };
+            if (!updatedStudent.profile) updatedStudent.profile = {};
+            updatedStudent.profile.gold = newVal;
+            
+            renderStudentProfile(updatedStudent);
+        } catch (e) {
+            console.error("Firebase Update Error:", e);
+            alert("❌ Помилка: не вдалося оновити базу даних.");
+        }
+    };
 }
-
 // ==========================================
-// 📝 НОВИЙ РЕДАКТОР РІВНІВ (UNITY)
+// 📝 КОНСТРУКТОР РІВНІВ (UNITY)
 // ==========================================
-
 async function renderLevelEditor() {
     const container = document.getElementById("view-tasks"); 
     if (!container) return;
@@ -250,42 +310,30 @@ async function renderLevelEditor() {
         </div>
 
         <div style="max-width: 800px; margin: 0 auto; background: #222; padding: 20px; border-radius: 10px; border: 1px solid #444;">
-            
             <div style="display: flex; gap: 15px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap;">
                 <select id="editor-topic" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="Fractions">Тема: Дроби</option>
                     <option value="Powers">Тема: Степені</option>
                     <option value="Quadratics">Тема: Рівняння</option>
                 </select>
-
                 <select id="editor-level" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="1">Рівень 1 (Легкий)</option>
                     <option value="2">Рівень 2 (Середній)</option>
                     <option value="3">Рівень 3 (Складний)</option>
                 </select>
-
                 <button id="btn-load-level" class="btn" style="width: auto; padding: 10px 20px; background: #3498db; margin:0;">Завантажити</button>
             </div>
 
-            <hr style="border-color: #444; margin-bottom: 20px;">
-
             <div id="level-form-area" style="opacity: 0.5; pointer-events: none; transition: opacity 0.3s;">
-                
                 <div style="margin-bottom: 20px;">
-                    <label style="color: #ccc; display:block; margin-bottom:5px;">Питання на дверях (Підтримує формули):</label>
-                    <input type="text" id="edit-question" placeholder="Напр: 2x + 4 = 10" 
-                           style="width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #555; color: white; font-family: monospace; font-size: 1.1em;">
+                    <label style="color: #ccc; display:block; margin-bottom:5px;">Питання на дверях (Формули підтримуються):</label>
+                    <input type="text" id="edit-question" placeholder="Напр: 2x + 4 = 10" style="width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #555; color: white;">
                 </div>
-
-                <div style="display: flex; gap: 20px; margin-bottom: 20px; align-items: flex-start;">
-                    <div style="flex: 1;">
-                        <label style="color: #2ecc71; font-weight:bold;">✅ Правильна відповідь:</label>
-                        <input type="text" id="edit-correct" placeholder="3" 
-                               style="width: 100%; padding: 12px; background: #1a1a1a; border: 2px solid #2ecc71; color: white; font-weight:bold;">
-                        <div id="math-validation-msg" style="font-size: 0.9em; margin-top: 5px; height: 1.2em; font-weight: bold;"></div>
-                    </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="color: #2ecc71; font-weight:bold;">✅ Правильна відповідь:</label>
+                    <input type="text" id="edit-correct" placeholder="3" style="width: 100%; padding: 12px; background: #1a1a1a; border: 2px solid #2ecc71; color: white;">
+                    <div id="math-validation-msg" style="font-size: 0.9em; margin-top: 5px; height: 1.2em; font-weight: bold;"></div>
                 </div>
-
                 <label style="color: #e74c3c; margin-bottom: 5px; display:block;">❌ Неправильні варіанти (Ключі-пастки):</label>
                 <div class="wrong-answers-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <input type="text" class="inp-wrong" placeholder="Помилка 1" style="padding: 10px; background: #1a1a1a; border: 1px solid #e74c3c; color: white;">
@@ -293,23 +341,18 @@ async function renderLevelEditor() {
                     <input type="text" class="inp-wrong" placeholder="Помилка 3" style="padding: 10px; background: #1a1a1a; border: 1px solid #e74c3c; color: white;">
                     <input type="text" class="inp-wrong" placeholder="Помилка 4" style="padding: 10px; background: #1a1a1a; border: 1px solid #e74c3c; color: white;">
                 </div>
-
                 <div style="background: #2c3e50; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #34495e;">
-                    <h4 style="margin-top:0; color: #3498db;">⚙️ Налаштування рівня</h4>
                     <div style="display: flex; gap: 20px;">
                         <div style="flex: 1;">
-                            <label style="font-size: 0.9em; color: #bdc3c7;">⏳ Час на проходження (сек):</label>
-                            <input type="number" id="edit-time" value="60" 
-                                   style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #555; color: white; text-align: center;">
+                            <label style="font-size: 0.9em; color: #bdc3c7;">⏳ Час (сек):</label>
+                            <input type="number" id="edit-time" value="60" style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #555; color: white;">
                         </div>
                         <div style="flex: 1;">
-                            <label style="font-size: 0.9em; color: #f1c40f;">💰 Золото за перемогу:</label>
-                            <input type="number" id="edit-gold" value="100" 
-                                   style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #f1c40f; color: #f1c40f; font-weight: bold; text-align: center;">
+                            <label style="font-size: 0.9em; color: #f1c40f;">💰 Нагорода:</label>
+                            <input type="number" id="edit-gold" value="100" style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #f1c40f; color: #f1c40f;">
                         </div>
                     </div>
                 </div>
-
                 <button id="btn-save-level" class="btn" style="background: #27ae60; width: 100%; font-size: 1.2em; padding: 15px;">💾 ЗБЕРЕГТИ РІВЕНЬ</button>
                 <p id="level-save-status" style="text-align: center; color: #aaa; margin-top: 10px; min-height: 20px;"></p>
             </div>
@@ -325,10 +368,6 @@ function setupLevelEditorLogic() {
     const btnSave = document.getElementById("btn-save-level");
     const formArea = document.getElementById("level-form-area");
     const statusText = document.getElementById("level-save-status");
-    const topicSel = document.getElementById("editor-topic");
-    const levelSel = document.getElementById("editor-level");
-
-    // Поля введення
     const qInput = document.getElementById("edit-question");
     const cInput = document.getElementById("edit-correct");
     const wInputs = document.querySelectorAll(".inp-wrong");
@@ -336,164 +375,96 @@ function setupLevelEditorLogic() {
     const goldInput = document.getElementById("edit-gold");
     const validationMsg = document.getElementById("math-validation-msg");
 
-    // --- АВТО-ВАЛІДАЦІЯ (Математика) ---
-    const validateMath = async () => {
-        let qVal = qInput.value.replace(/,/g, '.');
-        let aVal = cInput.value.replace(/,/g, '.');
-
-        if (!qVal || !aVal) { 
-            validationMsg.innerHTML = ""; 
-            cInput.style.border = "2px solid #2ecc71";
-            return; 
-        }
-
-        if (/[a-wy-zA-WY-Zа-яА-Я]/.test(aVal)) {
-            validationMsg.innerHTML = "ℹ️ Текстова відповідь (без перевірки)";
-            validationMsg.style.color = "#3498db";
-            cInput.style.border = "2px solid #3498db";
-            return;
-        }
-
-        try {
-            const math = await import('https://esm.run/mathjs');
-            
-            let isCorrect = false;
-
-            if (qVal.includes('=')) {
-                const parts = qVal.split('=');
-                const scope = { x: parseFloat(aVal) };
-                const left = math.evaluate(parts[0], scope);
-                const right = math.evaluate(parts[1], scope);
-                
-                if (math.abs(left - right) < 0.01) isCorrect = true;
-            } 
-            else {
-                const res = math.evaluate(qVal);
-                if (math.abs(res - parseFloat(aVal)) < 0.01) isCorrect = true;
-            }
-
-            if (isCorrect) {
-                validationMsg.innerHTML = "✅ Математично вірно!";
-                validationMsg.style.color = "#2ecc71";
-                cInput.style.border = "2px solid #2ecc71";
-            } else {
-                validationMsg.innerHTML = "⚠️ Помилка? Перевірте розрахунки.";
-                validationMsg.style.color = "#f1c40f";
-                cInput.style.border = "2px solid #f1c40f";
-            }
-
-        } catch (e) {
-            validationMsg.innerHTML = "";
-            cInput.style.border = "2px solid #2ecc71";
-        }
-    };
-
-    qInput.addEventListener("input", validateMath);
-    cInput.addEventListener("input", validateMath);
-
-    // --- ЛОГІКА ЗАВАНТАЖЕННЯ ---
+    // Функція завантаження
     btnLoad.onclick = async () => {
-        const key = `${topicSel.value}_${levelSel.value}`; 
-        
-        statusText.textContent = "⏳ Завантаження...";
-        formArea.style.opacity = "0.5";
+    const topic = document.getElementById("editor-topic").value;
+    const levelNum = document.getElementById("editor-level").value;
+    statusText.textContent = "⏳ Завантаження...";
+    
+    try {
+        const docSnap = await getDoc(doc(db, "teacher_configs", user.uid));
+        if (docSnap.exists() && docSnap.data()[topic]) {
+            const topicData = docSnap.data()[topic];
+            const levelData = topicData.doors?.find(d => d.id == levelNum);
 
-        try {
-            const docRef = doc(db, "teacher_configs", user.uid);
-            const docSnap = await getDoc(docRef);
-
-            qInput.value = "";
-            cInput.value = "";
-            wInputs.forEach(i => i.value = "");
-            validationMsg.innerHTML = "";
-            
-            // Default values
-            if (levelSel.value === "3") {
-                goldInput.value = "300"; 
+            if (levelData) {
+                qInput.value = levelData.question;
+                cInput.value = levelData.answer;
+                wInputs.forEach((inp, i) => { inp.value = levelData.wrongAnswers[i] || ""; });
+                goldInput.value = topicData.reward;
+                timeInput.value = topicData.timeLimit;
+                statusText.textContent = "✅ Завантажено!";
             } else {
-                goldInput.value = "100";
+                statusText.textContent = "ℹ️ Рівень порожній.";
             }
-            timeInput.value = "60";
-
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const levelData = data[key];
-
-                if (levelData) {
-                    qInput.value = levelData.question || "";
-                    cInput.value = levelData.correctAnswer || "";
-                    
-                    if (levelData.wrongAnswers) {
-                        levelData.wrongAnswers.forEach((ans, idx) => {
-                            if (wInputs[idx]) wInputs[idx].value = ans;
-                        });
-                    }
-                    if (levelData.timeLimit) timeInput.value = levelData.timeLimit;
-                    if (levelData.goldReward) goldInput.value = levelData.goldReward;
-                    
-                    statusText.textContent = "✅ Дані завантажено!";
-                } else {
-                    statusText.textContent = "ℹ️ Для цього рівня ще немає даних. Створено шаблон.";
-                }
-            } else {
-                statusText.textContent = "ℹ️ Створіть своє перше завдання.";
-            }
-
-            formArea.style.opacity = "1";
-            formArea.style.pointerEvents = "auto";
-            validateMath(); 
-
-        } catch (e) {
-            console.error(e);
-            statusText.textContent = "❌ Помилка завантаження.";
+        } else {
+            statusText.textContent = "ℹ️ Тема ще не створена.";
         }
-    };
+        formArea.style.opacity = "1";
+        formArea.style.pointerEvents = "auto";
+    } catch (e) { statusText.textContent = "❌ Помилка."; }
+};
 
-    // --- ЛОГІКА ЗБЕРЕЖЕННЯ ---
+    // Функція збереження
     btnSave.onclick = async () => {
-        const key = `${topicSel.value}_${levelSel.value}`;
-        
-        const wrongs = [];
-        wInputs.forEach(input => {
-            if(input.value.trim() !== "") wrongs.push(input.value.trim());
-        });
+    const topic = document.getElementById("editor-topic").value; // Напр: Fractions
+    const levelNum = parseInt(document.getElementById("editor-level").value); // Напр: 1
+    const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
 
-        if(!qInput.value || !cInput.value) {
-            alert("Помилка: Питання та Правильна відповідь обов'язкові!");
-            return;
+    if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
+
+    statusText.textContent = "⏳ Збереження...";
+
+    try {
+        const docRef = doc(db, "teacher_configs", user.uid);
+        const docSnap = await getDoc(docRef);
+        let currentData = docSnap.exists() ? docSnap.data() : {};
+
+        // 1. Створюємо структуру теми, якщо її немає
+        if (!currentData[topic]) {
+            currentData[topic] = { 
+                doors: [], 
+                reward: parseInt(goldInput.value) || 100, 
+                timeLimit: parseInt(timeInput.value) || 60 
+            };
         }
 
-        const dataToSave = {
+        // 2. Готуємо дані для конкретних дверей (рівня)
+        const doorData = {
+            id: levelNum,
             question: qInput.value.trim(),
-            correctAnswer: cInput.value.trim(),
-            wrongAnswers: wrongs,
-            timeLimit: parseInt(timeInput.value) || 60,
-            goldReward: parseInt(goldInput.value) || 100
+            answer: cInput.value.trim(), // Unity шукає саме 'answer'
+            wrongAnswers: wrongs
         };
 
-        statusText.textContent = "⏳ Збереження...";
+        // 3. Оновлюємо або додаємо рівень у масив
+        const doors = currentData[topic].doors || [];
+        const index = doors.findIndex(d => d.id === levelNum);
         
-        try {
-            const docRef = doc(db, "teacher_configs", user.uid);
-            
-            await setDoc(docRef, {
-                [key]: dataToSave 
-            }, { merge: true });
-
-            statusText.textContent = `✅ Збережено для ${topicSel.value} (Lv.${levelSel.value})!`;
-            statusText.style.color = "#2ecc71";
-            setTimeout(() => statusText.style.color = "#aaa", 3000);
-
-        } catch (e) {
-            console.error(e);
-            statusText.textContent = "❌ Помилка збереження!";
-            statusText.style.color = "#e74c3c";
+        if (index > -1) {
+            doors[index] = doorData;
+        } else {
+            doors.push(doorData);
         }
-    };
+
+        currentData[topic].doors = doors;
+        currentData[topic].reward = parseInt(goldInput.value) || 100;
+        currentData[topic].timeLimit = parseInt(timeInput.value) || 60;
+
+        // 4. Зберігаємо весь об'єкт теми
+        await setDoc(docRef, currentData);
+        
+        statusText.textContent = "✅ Збережено для гри!";
+        console.log("Дані оновлено для Unity:", currentData[topic]);
+    } catch (e) {
+        console.error("Помилка Firebase:", e);
+        statusText.textContent = "❌ Помилка збереження.";
+    }
+};
 }
 
 // ==========================================
-// 💎 РЕДАКТОР СКАРБНИЦІ
+// 💎 РЕДАКТОР СКАРБНИЦІ (ЦІНИ)
 // ==========================================
 async function renderTreasureEditor() {
     const container = document.getElementById("treasury-content");
@@ -501,21 +472,20 @@ async function renderTreasureEditor() {
 
     container.innerHTML = `
         <div class="teacher-header" style="text-align: center;">
-            <h2 style="font-size: 2.5em; color: var(--accent-gold);">💎 РЕДАГУВАННЯ ЦІН СКАРБНИЦІ</h2>
-            <p>Тут ви можете змінювати ціни на нагороди для учнів.</p>
+            <h2 style="color: var(--accent-gold);">💎 РЕДАГУВАННЯ СКАРБНИЦІ</h2>
         </div>
         <div class="category-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
-                <h3 style="color: #2ecc71; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Мікро-нагороди</h3>
-                <div id="teacher-rewards-micro" class="rewards-editor-list">⏳ Завантаження...</div>
+            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
+                <h3 style="color: #2ecc71;">Мікро</h3>
+                <div id="teacher-rewards-micro">⏳</div>
             </div>
-            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
-                <h3 style="color: #3498db; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Середні нагороди</h3>
-                <div id="teacher-rewards-medium" class="rewards-editor-list">⏳ Завантаження...</div>
+            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
+                <h3 style="color: #3498db;">Середні</h3>
+                <div id="teacher-rewards-medium">⏳</div>
             </div>
-            <div class="editor-category-block" style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333;">
-                <h3 style="color: #9b59b6; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">Великі нагороди</h3>
-                <div id="teacher-rewards-large" class="rewards-editor-list">⏳ Завантаження...</div>
+            <div class="editor-category-block" style="flex: 1; min-width: 250px; background: #1a1a1a; padding: 15px; border-radius: 10px;">
+                <h3 style="color: #9b59b6;">Великі</h3>
+                <div id="teacher-rewards-large">⏳</div>
             </div>
         </div>
     `;
@@ -527,9 +497,7 @@ async function renderTreasureEditor() {
             renderCategory("teacher-rewards-medium", items.medium || []);
             renderCategory("teacher-rewards-large", items.large || []);
         }
-    } catch (e) {
-        console.error("Помилка завантаження товарів:", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
 function renderCategory(containerId, itemList) {
@@ -537,63 +505,27 @@ function renderCategory(containerId, itemList) {
     if (!container) return;
     container.innerHTML = ""; 
 
-    if (!itemList || itemList.length === 0) {
-        container.innerHTML = "<p style='text-align:center; color:#555;'>Пусто</p>";
-        return;
-    }
-
     itemList.forEach(item => {
         const div = document.createElement("div");
         div.className = "shop-item";
-        div.style.cssText = "background: #2c3e50; border: 1px solid #34495e; border-radius: 8px; padding: 10px; margin-bottom: 15px;";
-
+        div.style.cssText = "background: #2c3e50; padding: 10px; margin-bottom: 10px; border-radius: 8px;";
         div.innerHTML = `
-            <div class="shop-item-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <div class="item-name" style="color: #ecf0f1; font-weight: bold;">${item.name}</div>
-                <div style="width: 50%; text-align: right; display: flex; align-items: center; justify-content: flex-end;">
-                    <input type="number" id="price-${item.id}" value="${item.price}" 
-                           style="width: 70px; padding: 5px; background: #34495e; color: #f1c40f; border: 1px solid #555; border-radius: 5px; text-align: center; margin-right: 5px;">
-                    <span style="color: #f1c40f;">💰</span>
-                </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <span style="font-weight: bold;">${item.name}</span>
+                <input type="number" id="price-${item.id}" value="${item.price}" style="width: 60px; background: #111; color: #f1c40f; border: none; text-align: center;">
             </div>
-            <div class="item-desc" style="margin-bottom: 10px; font-size: 0.8rem; color: #bdc3c7;">${item.desc}</div>
-            <button class="btn-save-price" id="btn-${item.id}"
-                    style="width: 100%; padding: 8px; background: #27ae60; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; text-transform: uppercase;">
-                💾 Зберегти ціну
-            </button>
+            <button class="btn-save-price" style="width: 100%; background: #27ae60; color: white; border: none; padding: 5px; cursor: pointer;">💾 Зберегти</button>
         `;
 
-        const btn = div.querySelector(".btn-save-price");
-        
+        const btn = div.querySelector("button");
         btn.onclick = async () => {
-            const input = document.getElementById(`price-${item.id}`);
-            const newPrice = parseInt(input.value);
-            
-            if (isNaN(newPrice) || newPrice < 0) { 
-                alert("Некоректне число."); 
-                return; 
-            }
-
+            const newPrice = parseInt(document.getElementById(`price-${item.id}`).value);
             btn.disabled = true;
-            btn.innerText = "⏳ Зберігаю...";
-            btn.style.backgroundColor = "#7f8c8d";
-
-            // 👇 ВИПРАВЛЕНО: Викликаємо правильну функцію
+            btn.innerText = "⏳...";
             const success = await updateItemPriceInDB(item.id, newPrice);
-            
             if (success) {
-                btn.innerText = "✅ Збережено!";
-                btn.style.backgroundColor = "#1abc9c"; 
-                setTimeout(() => {
-                    btn.innerText = "💾 Зберегти ціну";
-                    btn.style.backgroundColor = "#27ae60";
-                    btn.disabled = false;
-                }, 2000);
-            } else {
-                alert("Помилка! Перевірте інтернет або консоль.");
-                btn.innerText = "💾 Зберегти ціну";
-                btn.style.backgroundColor = "#c0392b";
-                btn.disabled = false;
+                btn.innerText = "✅";
+                setTimeout(() => { btn.innerText = "💾 Зберегти"; btn.disabled = false; }, 2000);
             }
         };
         container.appendChild(div);

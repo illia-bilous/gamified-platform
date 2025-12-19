@@ -3,207 +3,158 @@ import { showScreen } from "./ui.js";
 import { initAuth, getCurrentUser } from "./auth.js";
 import { initStudentPanel } from "./studentPanel.js";
 import { initTeacherPanel } from "./teacherPanel.js"; 
-
 import { loadTeacherAnalytics } from "./analytics.js";
-//  НОВІ ІМПОРТИ ДЛЯ UNITY ТА FIREBASE (Всі разом в одному місці!)
+
+// Імпорти Firebase
 import { db } from "./firebase.js";
 import { 
     doc, 
+    getDoc,
+    getDocs,
     updateDoc, 
     increment, 
     collection, 
     addDoc, 
     serverTimestamp,
-    query,       // <--- Додано з нижнього блоку
-    where,       // <--- Додано з нижнього блоку
-    getDocs,     // <--- Додано з нижнього блоку
-    orderBy,      // <--- Додано з нижнього блоку
-    onSnapshot
+    query,
+    where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let currentRole = null;
 
-const logout = () => {
-    localStorage.removeItem("currentUser");
-    currentRole = null;
-    location.hash = "";
-    resetForms();
-    showScreen("screen-home");
-};
-
-
-function setupButtonListener(id, handler) {
-    const btn = document.getElementById(id);
-    if (btn) {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener("click", handler);
-    }
-}
-
-function resetForms() {
-    console.log("🧹 Cleaning forms...");
-    const forms = ["login-form", "register-form"];
-
-    forms.forEach(formId => {
-        const form = document.getElementById(formId);
-        if (form) {
-            form.reset();
-            form.querySelectorAll("input, select").forEach(el => {
-                el.value = "";
-                el.classList.remove("input-error");
-            });
-            form.querySelectorAll("select").forEach(s => s.selectedIndex = 0);
-        }
-    });
-
-    document.querySelectorAll(".error-msg").forEach(el => el.remove());
-    document.getElementById("register-form-content")?.classList.remove("hidden");
-    document.getElementById("register-success")?.classList.add("hidden");
-}
-
-function updateRegisterView() {
-    const role = localStorage.getItem("selectedRole"); 
-    console.log("Налаштування форми для ролі:", role);
-
-    const emailGroup = document.getElementById("email-field-group");
-    const classWrapper = document.getElementById("select-class-wrapper");
-    const teacherKeyDiv = document.getElementById("register-teacher-key");
-    const regTitle = document.querySelector("#screen-register h2");
-    const studentTeacherIdBlock = document.getElementById("student-teacher-id-block");
-
-    if (role === "student") {
-        if(regTitle) regTitle.innerText = "Реєстрація Учня";
-        if(emailGroup) emailGroup.style.display = "none";
-        if(classWrapper) classWrapper.classList.remove("hidden");
-        if(teacherKeyDiv) teacherKeyDiv.classList.add("hidden");
-        if(studentTeacherIdBlock) studentTeacherIdBlock.classList.remove("hidden");
-
-        const emailInput = document.getElementById("reg-email");
-        if(emailInput) emailInput.removeAttribute("required");
-
-    } else {
-        if(regTitle) regTitle.innerText = "Реєстрація Вчителя";
-        if(emailGroup) emailGroup.style.display = "block"; 
-        if(classWrapper) classWrapper.classList.add("hidden");
-        if(teacherKeyDiv) teacherKeyDiv.classList.remove("hidden");
-        if(studentTeacherIdBlock) studentTeacherIdBlock.classList.add("hidden");
-
-        const emailInput = document.getElementById("reg-email");
-        if(emailInput) emailInput.setAttribute("required", "true");
-    }
-}
-
-function setupDashboardNavigation(screenId) {
-    const container = document.getElementById(screenId);
-    if (!container) return;
-
-    const menuButtons = container.querySelectorAll('.menu-item:not(.logout)');
-    const views = container.querySelectorAll('.panel-view');
-
-    menuButtons.forEach(btn => {
-        btn.onclick = () => {
-            const panelName = btn.dataset.panel;
-            
-            // UI перемикання
-            menuButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            views.forEach(view => {
-                view.classList.remove('active');
-                view.classList.add('hidden');
-            });
-            
-            const targetView = document.getElementById(`view-${panelName}`);
-            if (targetView) {
-                targetView.classList.remove('hidden');
-                targetView.classList.add('active');
-            }
-
-            // 🔥 ЛОГІКА ЗАВАНТАЖЕННЯ ДАНИХ (HOOK)
-            if (panelName === 'analytics') {
-                const user = getCurrentUser();
-                // Перевіряємо, чи це вчитель, щоб не викликати помилку
-                if (user && user.role === 'teacher') {
-                    loadTeacherAnalytics(user.uid);
-                }
-            }
-        };
-    });
-}
-
 // =========================================================
-// 🔥 ОБРОБКА ПОВІДОМЛЕНЬ ВІД UNITY (АНАЛІТИКА)
+// 🚀 ЛОГІКА UNITY (ЗВ'ЯЗОК З ГРОЮ)
 // =========================================================
-window.addEventListener("message", async (event) => {
-    // 1. Перевірка типу даних
-    if (typeof event.data !== "string") return;
 
-    // 2. Закриття гри
-    if (event.data === "CLOSE_GAME") {
-        document.getElementById("unity-container").classList.add("hidden");
-        // Якщо треба показати меню:
-        // const menu = document.getElementById("view-menu"); // Або ваша логіка показу меню
-        // if(menu) menu.classList.remove("hidden");
+// 1. Функція відправки конфігурації в Unity
+window.sendConfigToUnity = async (topicName) => {
+    const user = getCurrentUser();
+    const teacherId = user?.teacherUid || user?.profile?.teacherUid; 
+
+    if (!teacherId) {
+        console.error("❌ Teacher ID не знайдено. Відміна запиту.");
         return;
     }
 
-    // 3. Обробка результатів рівня
-    if (event.data.startsWith("LEVEL_COMPLETE|")) {
-        const jsonStr = event.data.split("|")[1];
+    console.log(`📡 Завантаження теми "${topicName}" для вчителя: ${teacherId}`);
+    
+    try {
+        const teacherConfigRef = doc(db, "teacher_configs", teacherId);
+        const docSnap = await getDoc(teacherConfigRef);
+
+        if (docSnap.exists()) {
+            const configData = docSnap.data();
+            const topicConfig = configData[topicName];
+
+            if (topicConfig) {
+                const jsonStr = JSON.stringify(topicConfig);
+                
+                // --- КРИТИЧНЕ ВИПРАВЛЕННЯ ТУТ ---
+                // Шукаємо спочатку в головному вікні, потім в iframe
+                const iframe = document.querySelector("#unity-container iframe");
+                const targetInstance = window.unityInstance || iframe?.contentWindow?.unityInstance;
+
+                if (targetInstance) {
+                    targetInstance.SendMessage('GameManager', 'SetLevelConfig', jsonStr);
+                    console.log("🚀 Дані відправлені в Unity!");
+                } else {
+                    console.error("❌ unityInstance не знайдено! Перевірте index.html всередині папки unity.");
+                }
+            }
+        }
+    } catch (error) {
+        console.error("❌ Помилка Firebase:", error);
+    }
+};
+
+// 2. Слухач повідомлень (Місток між JS та Unity .jslib)
+// ВСТАВТЕ ЦЕ У router.js ЗАМІСТЬ СТАРОГО window.addEventListener("message", ...)
+window.addEventListener("message", async (event) => {
+    const data = event.data;
+    if (!data) return;
+
+    // 1. Логуємо ВСЕ, що приходить, щоб зрозуміти формат
+    console.log("📥 Router отримав повідомлення:", data);
+
+    // 2. Визначаємо тип повідомлення (враховуємо і рядки, і об'єкти)
+    const type = (typeof data === 'string') ? data : data.type;
+
+    // --- А) Запит конфігурації ---
+    if (type === "RequestConfigFromJS" || type === "UNITY_READY") {
+        console.log("🎯 ПІДТВЕРДЖЕНО: Обробка запиту конфігурації...");
         
-        try {
-            const data = JSON.parse(jsonStr); 
-            // data = { score: 100, stars: 10, level: 1, topic: "Fractions" }
-
-            const user = getCurrentUser();
-            if (!user) {
-                console.warn("⚠️ Користувач не авторизований, результати не збережено.");
-                return;
+        // Визначаємо тему (якщо це об'єкт, беремо з нього, інакше Fractions)
+        const topic = data.topic || "Fractions";
+        
+        // Робимо паузу 300мс, щоб Unity встигла ініціалізувати свій GameManager
+        setTimeout(async () => {
+            if (window.sendConfigToUnity) {
+                await window.sendConfigToUnity(topic);
+            } else {
+                console.error("❌ Помилка: window.sendConfigToUnity не визначена!");
             }
+        }, 300);
+        return;
+    }
 
-            console.log("📥 Отримано результати від Unity:", data);
+    // --- Б) Закриття гри ---
+    if (type === "CLOSE_GAME") {
+        console.log("🚪 Закриття гри...");
+        if (window.closeUnityGame) window.closeUnityGame();
+        return;
+    }
 
-            // А) Нараховуємо золото
-            const userRef = doc(db, "users", user.uid);
+    // --- В) Результати рівня (LEVEL_COMPLETE) ---
+    if (type === "LEVEL_COMPLETE" || (typeof data === 'string' && data.startsWith("LEVEL_COMPLETE"))) {
+        console.log("🏆 Отримано результати рівня!");
+        
+        let resultData = null;
+        if (typeof data === "string" && data.includes("|")) {
+            try {
+                resultData = JSON.parse(data.split("|")[1]);
+            } catch(e) { console.error("Помилка парсингу результатів:", e); }
+        } else {
+            resultData = data.payload ? JSON.parse(data.payload) : data;
+        }
 
-            // ГАРАНТУЄМО, що це число. Якщо прийде сміття, запишемо 0.
-            const scoreAmount = Number(data.score) || 0; 
-
-            await updateDoc(userRef, {
-                "profile.gold": increment(scoreAmount)
-            });
-
-            // Б) Записуємо в історію ігор (для аналітики вчителя)
-            const historyRef = collection(db, "users", user.uid, "game_history");
-            await addDoc(historyRef, {
-                topic: data.topic,
-                level: data.level,
-                grade: data.stars,      // Оцінка
-                goldEarned: data.score,
-                timestamp: serverTimestamp(),
-                dateString: new Date().toLocaleString("uk-UA")
-            });
-
-            console.log("✅ Результат успішно збережено в Firebase!");
-
-            // Оновлюємо відображення золота, якщо елемент є на сторінці
-            const goldEl = document.getElementById("student-gold-display");
-            if(goldEl) {
-                let current = parseInt(goldEl.innerText) || 0;
-                goldEl.innerText = `${current + data.score} 💰`;
-            }
-
-        } catch (e) {
-            console.error("❌ Помилка збереження даних з Unity:", e);
+        if (resultData) {
+            handleGameResult(resultData); // Винесіть логіку Firebase в окрему функцію для чистоти
         }
     }
 });
+
+// Допоміжна функція для Firebase (щоб не захаращувати обробник подій)
+async function handleGameResult(resultData) {
+    const user = getCurrentUser();
+    if (!user) return;
+    
+    try {
+        const goldToEarn = Number(resultData.score || resultData.goldEarned || 0);
+        console.log(`💰 Нарахування золота: ${goldToEarn}`);
+        
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, { "profile.gold": increment(goldToEarn) });
+        
+        await addDoc(collection(db, "users", user.uid, "game_history"), {
+            topic: resultData.topic || "Fractions",
+            level: Number(resultData.level) || 1,
+            grade: Number(resultData.stars || resultData.grade) || 0,
+            goldEarned: goldToEarn,
+            timestamp: serverTimestamp()
+        });
+        console.log("✅ Дані збережено в Firebase");
+    } catch (e) {
+        console.error("❌ Помилка збереження результатів:", e);
+    }
+}
+// =========================================================
+// 🛠 СЛУЖБОВІ ФУНКЦІЇ (АВТОРИЗАЦІЯ, UI, РЕМОНТ)
 // =========================================================
 
 function initializeApp() {
     console.log("initializeApp: Start...");
 
+    // Навігація ролей
     setupButtonListener("btn-role-student", () => { 
         currentRole = "student"; 
         localStorage.setItem("selectedRole", "student");
@@ -217,45 +168,27 @@ function initializeApp() {
         showScreen("screen-auth-choice"); 
         setTimeout(resetForms, 50);
     });
-    
-    setupButtonListener("btn-back-to-home", () => {
-        showScreen("screen-home");
-        setTimeout(resetForms, 50);
-    });
 
-    setupButtonListener("btn-back-auth1", () => { 
-        showScreen("screen-auth-choice");
-        setTimeout(resetForms, 50);
-    });
-
-    setupButtonListener("btn-back-auth2", () => { 
-        showScreen("screen-auth-choice");
-        setTimeout(resetForms, 50);
-    });
-    
-    setupButtonListener("btn-login", () => { 
-        showScreen("screen-login"); 
-        setTimeout(resetForms, 50); 
-    });
-
+    setupButtonListener("btn-back-to-home", () => showScreen("screen-home"));
+    setupButtonListener("btn-login", () => showScreen("screen-login"));
     setupButtonListener("btn-register", () => {
         showScreen("screen-register");
-        updateRegisterView(); 
-        setTimeout(resetForms, 50);
+        updateRegisterView();
     });
 
     setupButtonListener("logout-student", logout);
     setupButtonListener("logout-teacher", logout);
 
-    const handleLoginSuccess = (role) => {
+    // Вхід в панелі
+    const handleLoginSuccess = async (role) => {
         if (role === "student") {
             showScreen("screen-student");
-            setupDashboardNavigation("screen-student");
-            initStudentPanel();
+            await initStudentPanel(); // Спочатку ініціалізація
+            setupDashboardNavigation("screen-student"); // Потім навігація
         } else {
             showScreen("screen-teacher");
+            await initTeacherPanel(); // ВАЖЛИВО: дочекатися побудови DOM вчителя
             setupDashboardNavigation("screen-teacher");
-            initTeacherPanel(); 
         }
     };
 
@@ -263,32 +196,93 @@ function initializeApp() {
 
     const user = getCurrentUser();
     if (user) {
-        currentRole = user.role;
         handleLoginSuccess(user.role);
     } else {
         showScreen("screen-home");
     }
 }
 
-initializeApp();
-
-// Тимчасова функція для ремонту
+// Функція виправлення "битого" золота (NaN)
 async function fixBrokenGold() {
-    console.log("🚑 Починаю лікування золота...");
-    const snapshot = await getDocs(collection(db, "users"));
-    
-    snapshot.forEach(async (userDoc) => {
-        const data = userDoc.data();
-        // Якщо у профілі NaN або немає золота
-        if (data.profile && (isNaN(data.profile.gold) || data.profile.gold === null)) {
-            console.log(`🔧 Виправляю користувача: ${data.name || userDoc.id}`);
-            await updateDoc(doc(db, "users", userDoc.id), {
-                "profile.gold": 0 // Скидаємо поламане золото на 0
-            });
-        }
-    });
-    console.log("✅ Лікування завершено (перевірте консоль на помилки)");
+    try {
+        const snapshot = await getDocs(collection(db, "users"));
+        snapshot.forEach(async (userDoc) => {
+            const data = userDoc.data();
+            if (data.profile && (isNaN(data.profile.gold) || data.profile.gold === null)) {
+                await updateDoc(doc(db, "users", userDoc.id), { "profile.gold": 0 });
+            }
+        });
+    } catch (e) { console.error("Fix gold error:", e); }
 }
 
-// Запустити через 3 секунди після завантаження сторінки
+// Допоміжні функції UI
+function setupButtonListener(id, handler) {
+    const btn = document.getElementById(id);
+    if (btn) {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener("click", handler);
+    }
+}
+
+const logout = () => {
+    localStorage.removeItem("currentUser");
+    location.hash = "";
+    showScreen("screen-home");
+};
+
+function resetForms() {
+    document.querySelectorAll("form").forEach(f => f.reset());
+}
+
+function updateRegisterView() {
+    const role = localStorage.getItem("selectedRole");
+    const isStudent = role === "student";
+    
+    document.getElementById("email-field-group")?.toggleAttribute("hidden", isStudent);
+    document.getElementById("select-class-wrapper")?.classList.toggle("hidden", !isStudent);
+    document.getElementById("student-teacher-id-block")?.classList.toggle("hidden", !isStudent);
+    
+    const regTitle = document.querySelector("#screen-register h2");
+    if (regTitle) regTitle.innerText = isStudent ? "Реєстрація Учня" : "Реєстрація Вчителя";
+}
+
+function setupDashboardNavigation(screenId) {
+    const container = document.getElementById(screenId);
+    if (!container) return;
+    
+    const menuButtons = container.querySelectorAll('.menu-item:not(.logout)');
+    
+    menuButtons.forEach(btn => {
+        btn.onclick = () => {
+            const panelName = btn.dataset.panel;
+            
+            // 1. Видаляємо active у кнопок
+            menuButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // 2. Ховаємо всі панелі
+            container.querySelectorAll('.panel-view').forEach(view => {
+                view.classList.add('hidden');
+                view.classList.remove('active');
+            });
+
+            // 3. Показуємо потрібну
+            const targetView = document.getElementById(`view-${panelName}`);
+            if (targetView) {
+                targetView.classList.remove('hidden');
+                targetView.classList.add('active');
+            }
+
+            // 4. Спеціальні виклики
+            if (panelName === 'analytics') {
+                const user = getCurrentUser();
+                if (user?.role === 'teacher') loadTeacherAnalytics(user.uid);
+            }
+        };
+    });
+}
+
+// Запуск
+initializeApp();
 setTimeout(fixBrokenGold, 3000);
