@@ -1,115 +1,159 @@
 // src/gameBridge.js
 import { db } from "./firebase.js";
-import { doc, getDoc, updateDoc, increment, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { 
+    doc, 
+    getDoc, 
+    updateDoc, 
+    increment, 
+    addDoc, 
+    collection, 
+    serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getCurrentUser } from "./auth.js";
 
-// ==========================================
-// 1. ОТРИМАННЯ ПАРАМЕТРІВ З URL (ДЛЯ IFRAME)
-// ==========================================
-const urlParams = new URLSearchParams(window.location.search);
-const teacherId = urlParams.get('teacherId');
-const topic = urlParams.get('topic') || 'Fractions';
-const currentLevel = urlParams.get('level') || '1';
+// Змінні стану гри
+let activeTopic = "Fractions";
+let activeTeacherId = null;
 
 // ==========================================
-// 2. ЗАВАНТАЖЕННЯ ЗАВДАНЬ (UNITY <- FIREBASE)
+// 1. ФУНКЦІЯ ВІДПРАВКИ КОНФІГУРАЦІЇ (Викликається з router.js)
 // ==========================================
-async function fetchAndSendConfig() {
+export async function sendConfigToUnity(topicName, teacherId) {
+    // Зберігаємо в змінні, щоб використати при збереженні результатів
+    activeTopic = topicName;
+    activeTeacherId = teacherId;
+
     if (!teacherId) {
-        console.error("GameBridge: Teacher ID not found in URL!");
+        console.error("❌ GameBridge: Teacher ID не передано!");
         return;
     }
 
+    console.log(`📡 GameBridge: Завантаження теми "${topicName}" для вчителя: ${teacherId}`);
+    
     try {
-        // Завантажуємо конфігурацію вчителя
-        const configRef = doc(db, "teacher_configs", teacherId);
-        const configSnap = await getDoc(configRef);
+        const teacherConfigRef = doc(db, "teacher_configs", teacherId);
+        const docSnap = await getDoc(teacherConfigRef);
 
-        if (configSnap.exists()) {
-            const allConfigs = configSnap.data();
-            
-            // Беремо дані конкретно для цієї теми
-            const levelData = allConfigs[topic] || allConfigs;
-            
-            // Додаємо номер рівня в об'єкт, щоб Unity знала, яку частину лабіринту будувати
-            const finalConfig = {
-                ...levelData,
-                currentLevel: parseInt(currentLevel)
-            };
+        if (docSnap.exists()) {
+            const configData = docSnap.data();
+            const topicConfig = configData[topicName];
 
-            const jsonStr = JSON.stringify(finalConfig);
+            if (topicConfig) {
+                // Додаємо технічні дані, якщо треба
+                const finalConfig = {
+                    ...topicConfig,
+                    currentLevel: 1 // Поки що стартуємо з 1, або можна брати з профілю учня
+                };
 
-            if (window.unityInstance) {
-                window.unityInstance.SendMessage('GameManager', 'SetLevelConfig', jsonStr);
-                console.log("✅ Завдання відправлено в Unity для рівня:", currentLevel);
+                const jsonStr = JSON.stringify(finalConfig);
+                
+                // Шукаємо Unity (або в iframe, або в тому ж вікні)
+                const iframe = document.querySelector("#unity-container iframe");
+                const targetInstance = window.unityInstance || iframe?.contentWindow?.unityInstance;
+
+                if (targetInstance) {
+                    targetInstance.SendMessage('GameManager', 'SetLevelConfig', jsonStr);
+                    console.log("🚀 GameBridge: Дані успішно відправлені в Unity!");
+                } else {
+                    console.warn("⚠️ GameBridge: Unity ще не готова. Чекаємо...");
+                    // Спробувати ще раз через 0.5 сек (максимум 5 разів можна додати лічильник)
+                    setTimeout(() => sendConfigToUnity(topicName, teacherId), 500);
+                }
             } else {
-                // Якщо Unity ще не ініціалізувалася, пробуємо знову через секунду
-                setTimeout(fetchAndSendConfig, 1000);
+                console.warn(`⚠️ Тема ${topicName} відсутня у конфігурації вчителя.`);
             }
-        } else {
-            console.warn("Конфігурація вчителя не знайдена, використовуються стандартні налаштування Unity.");
         }
     } catch (error) {
-        console.error("❌ Помилка завантаження конфігу:", error);
+        console.error("❌ Помилка Firebase:", error);
     }
 }
 
-// Робимо функцію доступною для виклику з Unity (DataManager.cs)
-window.RequestGameConfigFromFirebase = function() {
-    fetchAndSendConfig();
-};
-
 // ==========================================
-// 3. ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ (UNITY -> SITE)
+// 2. ОБРОБКА РЕЗУЛЬТАТІВ (Експортуємо для router.js)
 // ==========================================
-// Цей слухач ловить повідомлення від Unity
-window.addEventListener("message", async (event) => {
-    // Unity шле JSON-рядок, його треба розпарсити
-    let data;
-    try {
-        data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    } catch (e) { return; }
+export async function handleGameMessage(event) {
+    const data = event.data;
+    if (!data) return;
 
-    if (data.type === "LEVEL_COMPLETE") {
-        try {
-            const payload = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload;
-            const user = getCurrentUser();
+    // Фільтруємо системні повідомлення React/Webpack, якщо вони є
+    if (data.source && data.source.startsWith("react")) return;
 
-            if (!user) {
-                console.error("Користувач не авторизований!");
-                return;
-            }
+    const type = (typeof data === 'string') ? data : data.type;
 
-            console.log("🏆 Зберігаємо результат гри:", payload);
+    // --- А) Запит конфігурації від Unity ---
+    if (type === "RequestConfigFromJS" || type === "UNITY_READY") {
+        console.log("🎮 Unity просить конфіг. Відправляємо...");
+        if (activeTeacherId) {
+            await sendConfigToUnity(activeTopic, activeTeacherId);
+        }
+        return;
+    }
 
-            // 1. Оновлення профілю (Золото + Максимальний рівень)
-            const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, {
-                "profile.gold": increment(payload.score),
-                "profile.progress.maxLevel": increment(1) // Відкриваємо наступний рівень
-            });
+    // --- Б) Закриття гри ---
+    if (type === "CLOSE_GAME") {
+        console.log("🚪 Закриття гри");
+        const container = document.getElementById("unity-container");
+        if (container) container.classList.add("hidden");
+        // Тут можна додати оновлення UI
+        return;
+    }
 
-            // 2. Запис в історію для вчителя
-            await addDoc(collection(db, "game_results"), {
-                userId: user.uid,
-                teacherUid: teacherId, // Беремо з URL, бо це надійніше
-                userName: user.name,
-                topic: topic,
-                level: payload.level || currentLevel,
-                grade: payload.grade,
-                goldEarned: payload.score,
-                timestamp: serverTimestamp()
-            });
+    // --- В) Результати рівня ---
+    if (type === "LEVEL_COMPLETE") {
+        console.log("🏆 Рівень пройдено!");
+        
+        // Парсинг
+        let resultData = null;
+        if (data.payload) {
+            resultData = (typeof data.payload === 'string') ? JSON.parse(data.payload) : data.payload;
+        } else if (typeof data === "string" && data.includes("|")) {
+             try { resultData = JSON.parse(data.split("|")[1]); } catch(e){}
+        } else {
+            resultData = data; // Якщо це вже об'єкт
+        }
 
-            console.log("✅ Результат успішно синхронізовано з Firebase!");
-            
-            // Після успішного збереження можна закрити гру через 2 секунди
-            setTimeout(() => {
-                if (window.parent.closeUnityGame) window.parent.closeUnityGame();
-            }, 2000);
-
-        } catch (error) {
-            console.error("❌ Помилка збереження результату:", error);
+        if (resultData) {
+            await saveGameResult(resultData);
         }
     }
-});
+}
+
+// Внутрішня функція збереження
+async function saveGameResult(resultData) {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    try {
+        const goldToEarn = Number(resultData.score || resultData.goldEarned || 0);
+        console.log(`💰 Нарахування золота: ${goldToEarn}`);
+
+        // 1. Оновлюємо баланс
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, { 
+            "profile.gold": increment(goldToEarn) 
+            // Тут можна додати логіку відкриття рівнів: "profile.maxLevel": ...
+        });
+
+        // 2. Пишемо історію
+        await addDoc(collection(db, "users", user.uid, "game_history"), {
+            topic: activeTopic,
+            level: Number(resultData.level) || 1,
+            grade: Number(resultData.stars || resultData.grade) || 0,
+            goldEarned: goldToEarn,
+            teacherId: activeTeacherId, // Щоб знати, за чиїм конфігом грав
+            timestamp: serverTimestamp()
+        });
+
+        console.log("✅ Дані збережено в Firebase");
+        
+        // Оновлюємо відображення золота на екрані (знаходимо елемент)
+        const goldDisplay = document.getElementById("student-gold-display");
+        if(goldDisplay) {
+            const currentGold = parseInt(goldDisplay.innerText || "0");
+            goldDisplay.innerText = currentGold + goldToEarn;
+        }
+
+    } catch (e) {
+        console.error("❌ Помилка збереження результатів:", e);
+    }
+}

@@ -270,6 +270,49 @@ export function initAuth(onLoginSuccess) {
                 }
             }
         });
+
+        // ==========================================
+// 🔙 ЛОГІКА КНОПКИ "НАЗАД" (ПРИ РЕЄСТРАЦІЇ)
+// ==========================================
+function setupBackButton() {
+    // 1. Знаходимо всі кнопки, які можуть бути "Назад"
+    // (Шукаємо по ID "btn-back" або по класу "btn-back")
+    const backButtons = document.querySelectorAll('#btn-back, .btn-back');
+
+    backButtons.forEach(btn => {
+        // Видаляємо старі події (на випадок дублювання), клонуючи кнопку
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault(); // Щоб не перезавантажувало сторінку
+            console.log("🔙 Натиснуто кнопку НАЗАД");
+
+            // 2. Ховаємо всі форми реєстрації
+            const regTeacher = document.getElementById('register-teacher-block'); // Перевірте, чи такий ID у блоку вчителя
+            const regStudent = document.getElementById('register-student-block'); // Перевірте, чи такий ID у блоку учня
+            
+            if (regTeacher) regTeacher.classList.add('hidden');
+            if (regStudent) regStudent.classList.add('hidden');
+
+            // 3. Показуємо екран вибору (або входу)
+            const roleSelect = document.getElementById('role-selection-block'); // Блок з кнопками "Я Вчитель / Я Учень"
+            const loginBlock = document.getElementById('login-block'); // Або блок входу
+            
+            // Логіка: якщо є вибір ролі - показуємо його, якщо ні - то екран входу
+            if (roleSelect) {
+                roleSelect.classList.remove('hidden');
+            } else if (loginBlock) {
+                loginBlock.classList.remove('hidden');
+            }
+        });
+    });
+}
+
+// 👇 НЕ ЗАБУДЬТЕ ВИКЛИКАТИ ЦЮ ФУНКЦІЮ ПРИ ЗАВАНТАЖЕННІ СТОРІНКИ
+document.addEventListener('DOMContentLoaded', () => {
+    setupBackButton();
+});
     }
 
     const goToLoginBtn = document.getElementById("btn-go-to-login");
@@ -282,4 +325,26 @@ export function initAuth(onLoginSuccess) {
              document.getElementById("btn-login")?.click();
         });
     }
+}
+
+export function renderRegisterForm(role) {
+    const isStudent = role === "student";
+
+    // Змінюємо заголовок
+    const regTitle = document.querySelector("#screen-register h2");
+    if (regTitle) regTitle.innerText = isStudent ? "Реєстрація Учня" : "Реєстрація Вчителя";
+
+    // Допоміжна функція для ховання/показу
+    const setVisible = (id, visible) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle("hidden", !visible);
+    };
+
+    // 1. Поля для учня
+    setVisible("select-class-wrapper", isStudent);      // Вибір класу
+    setVisible("student-teacher-id-block", isStudent);  // Поле "Код вчителя"
+
+    // 2. Поля для вчителя
+    setVisible("email-field-group", !isStudent);        // Email
+    setVisible("teacher-key-block", !isStudent);        // Код адміністратора (TEACHER_KEY)
 }

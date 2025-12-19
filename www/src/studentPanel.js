@@ -3,7 +3,9 @@
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemInList } from "./shopData.js";
 import { db } from "./firebase.js"; 
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+// 👇 1. ДОДАНО ВІДСУТНІЙ ІМПОРТ
+import { sendConfigToUnity } from "./gameBridge.js";
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // ==========================================
 // 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
@@ -16,95 +18,6 @@ const AVAILABLE_AVATARS = [
 
 let cachedShopItems = null;
 
-// ==========================================
-// 📡 ГЛОБАЛЬНИЙ СЛУХАЧ (UNITY <-> SITE)
-// ==========================================
-if (!window.hasUnityListener) {
-    window.addEventListener("message", function(event) {
-        // Якщо прийшов сигнал про закриття
-        if (event.data === "CLOSE_GAME") {
-            if (window.closeUnityGame) window.closeUnityGame();
-            return;
-        }
-
-        // Спробуємо розпарсити JSON (бо Unity тепер шле JSON)
-        try {
-    const data = JSON.parse(event.data);
-    
-    // Якщо прийшов формат з type та payload (як ми робили в Unity)
-    if (data.type === "LEVEL_COMPLETE" && data.payload) {
-        const payload = JSON.parse(data.payload);
-        console.log("🏆 Результати (Payload):", payload);
-        // Використовуємо payload.score, бо Unity шле "score"
-        handleLevelComplete(payload.score, payload.grade, payload.level);
-    } 
-    // Якщо прийшов прямий JSON (про всяк випадок)
-    else if (data.gold !== undefined || data.score !== undefined) {
-        handleLevelComplete(data.gold || data.score, data.grade, data.level);
-    }
-} catch (e) {
-            // Якщо це не JSON, можливо це старий формат рядка?
-            if (typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
-                const parts = event.data.split("|");
-                handleLevelComplete(parseInt(parts[1]), parseFloat(parts[2]), parseInt(parts[3]));
-            }
-        }
-    });
-    window.hasUnityListener = true;
-}
-
-async function handleLevelComplete(amount, grade, levelCompleted) {
-    let currentUser = getCurrentUser(); 
-    if (!currentUser) return;
-
-    let safeAmount = Number(amount) || 0;
-    let safeGrade = Number(grade) || 0;
-    let safeLevel = Number(levelCompleted) || 1;
-
-    // 1. Оновлюємо золото в локальному об'єкті
-    if (!currentUser.profile) currentUser.profile = {};
-    let currentGoldInDb = Number(currentUser.profile.gold) || 0;
-    currentUser.profile.gold = currentGoldInDb + safeAmount;
-
-    // 2. Оновлюємо прогрес рівнів
-    if (!currentUser.profile.progress) currentUser.profile.progress = {};
-    const currentMax = Number(currentUser.profile.progress.maxLevel) || 1;
-    if (safeLevel >= currentMax) {
-         currentUser.profile.progress.maxLevel = safeLevel + 1;
-    }
-
-    // 3. Зберігаємо в Firebase та localStorage
-    await saveUserData(currentUser);
-    
-    // 4. ОНОВЛЮЄМО UI
-    updateHomeDisplay(currentUser);
-    
-    // 🔥 Оновлюємо розділи магазину, щоб ціни були актуальними
-    if (cachedShopItems) {
-        renderShopSection("rewards-micro-list", cachedShopItems.micro);
-        renderShopSection("rewards-medium-list", cachedShopItems.medium);
-        renderShopSection("rewards-large-list", cachedShopItems.large);
-    }
-
-    // 5. Запис в історію результатів (твій код без змін)
-    try {
-        const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-        await addDoc(collection(db, "game_results"), {
-            userId: currentUser.uid,
-            teacherUid: currentUser.teacherUid,
-            userName: currentUser.name,
-            userClass: currentUser.className || "N/A",
-            topic: "Fractions", // ДОДАЙ ЦЕ ПОЛЕ, щоб вчитель бачив тему
-            level: safeLevel,
-            grade: safeGrade,
-            goldEarned: safeAmount,
-            timestamp: new Date()
-        });
-    } catch (e) { console.error("History save error:", e); }
-
-    alert(`🎉 Рівень пройдено!\n💰 Отримано: ${safeAmount} монет\n⭐ Оцінка: ${safeGrade}`);
-    setTimeout(() => renderLeaderboard(currentUser), 1500);
-}
 
 // ==========================================
 // 🎮 ЛОГІКА UNITY (ЗАПУСК ТА ЗАКРИТТЯ)
@@ -114,16 +27,17 @@ function setupUnityUI() {
     const startBtn = document.getElementById("btn-start-lesson");
 
     if (startBtn) {
+        // Клонуємо кнопку, щоб видалити старі події onclick
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
         newBtn.onclick = () => {
             const user = getCurrentUser();
-            if (!user || !user.teacherUid) return alert("Помилка зв'язку з вчителем.");
+            if (!user || !user.teacherUid) return alert("Помилка зв'язку з вчителем (Teacher ID not found).");
 
             if (unityContainer) {
                 unityContainer.classList.remove("hidden");
-                newBtn.style.display = "none"; 
+                newBtn.style.display = "none"; // Ховаємо кнопку запуску
 
                 if (!document.getElementById("btn-force-close-unity")) {
                     const closeBtn = document.createElement("button");
@@ -138,7 +52,8 @@ function setupUnityUI() {
                 if (!iframe) {
                     iframe = document.createElement("iframe");
                     const currentLevel = user.profile?.progress?.maxLevel || 1;
-                    iframe.src = `unity/index.html?teacherId=${user.teacherUid}&topic=Fractions&level=${currentLevel}&v=${Date.now()}`;
+                    // 👇 URL тепер чистіший, бо параметри підуть через міст (хоча level можна залишити)
+                    iframe.src = `unity/index.html?v=${Date.now()}`;
                     iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
 
                     // Ретранслятор повідомлень
@@ -150,11 +65,15 @@ function setupUnityUI() {
                     };
                     
                     window.addEventListener("message", messageHandler);
-                    // Зберігаємо посилання, щоб видалити при закритті
                     iframe._handler = messageHandler; 
 
                     unityContainer.appendChild(iframe);
                 }
+
+                // 👇 2. ВАЖЛИВО: ЯВНО ВІДПРАВЛЯЄМО КОНФІГУРАЦІЮ
+                // Це гарантує, що гра отримає правильні параметри (складність, таймер і т.д.)
+                console.log("🚀 Запуск гри: відправка конфігурації...");
+                sendConfigToUnity("Fractions", user.teacherUid);
             }
         };
     }
@@ -170,7 +89,11 @@ function setupUnityUI() {
         }
         const closeBtn = document.getElementById("btn-force-close-unity");
         if (closeBtn) closeBtn.remove();
-        if (startBtn) startBtn.style.display = "inline-block"; 
+        
+        const currentStartBtn = document.getElementById("btn-start-lesson");
+        if (currentStartBtn) {
+            currentStartBtn.style.display = "inline-block"; 
+        }
         
         let u = getCurrentUser();
         if (typeof updateHomeDisplay === "function") updateHomeDisplay(u);
