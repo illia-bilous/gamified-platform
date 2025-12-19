@@ -563,3 +563,290 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
 
     parent.appendChild(col);
 }
+
+// ==========================================
+// 📊 АНАЛІТИКА ТА ЖУРНАЛ (НОВИЙ БЛОК)
+// ==========================================
+
+// Змінні стану для аналітики
+let cachedStudentsForAnalytics = []; 
+let expandedStudentId = null; // ID учня, чий журнал відкрито
+
+export async function renderAnalyticsPanel(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Очищаємо контейнер та малюємо "шапку"
+    container.innerHTML = `
+        <div class="teacher-header">
+            <h2>📊 Аналітика Класу</h2>
+        </div>
+        <div id="analytics-table-container">⏳ Завантаження даних...</div>
+        <div id="student-journal-details" style="margin-top: 20px;"></div>
+    `;
+
+    const teacher = getCurrentUser();
+    if (!teacher) return;
+
+    try {
+        // 1. Завантажуємо всіх учнів вчителя
+        const q = query(
+            collection(db, "users"),
+            where("role", "==", "student"),
+            where("teacherUid", "==", teacher.uid)
+        );
+
+        const querySnapshot = await getDocs(q);
+        cachedStudentsForAnalytics = [];
+        querySnapshot.forEach((doc) => {
+            cachedStudentsForAnalytics.push({ id: doc.id, ...doc.data() });
+        });
+
+        // 2. Сортуємо (спочатку за класом, потім за іменем)
+        cachedStudentsForAnalytics.sort((a, b) => {
+            const classCompare = (a.className || "").localeCompare(b.className || "");
+            if (classCompare !== 0) return classCompare;
+            return (a.name || "").localeCompare(b.name || "");
+        });
+
+        // 3. Малюємо таблицю
+        renderAnalyticsTable();
+
+    } catch (error) {
+        console.error("Помилка аналітики:", error);
+        container.innerHTML = `<p style="color:red; text-align:center;">Помилка: ${error.message}</p>`;
+    }
+}
+
+function renderAnalyticsTable() {
+    const container = document.getElementById("analytics-table-container");
+    const detailsContainer = document.getElementById("student-journal-details");
+    
+    if (!container) return;
+
+    // Очищаємо деталі, якщо ніхто не обраний
+    if (!expandedStudentId && detailsContainer) {
+        detailsContainer.innerHTML = "";
+    }
+
+    // 🔥 ЛОГІКА ФОКУСУВАННЯ:
+    // Якщо учень обраний -> показуємо тільки його (масив з 1 елемента).
+    // Якщо ні -> показуємо всіх.
+    const studentsToShow = expandedStudentId 
+        ? cachedStudentsForAnalytics.filter(s => s.id === expandedStudentId) 
+        : cachedStudentsForAnalytics;
+
+    if (studentsToShow.length === 0) {
+        container.innerHTML = `<p style="text-align:center; color:#aaa;">Учнів не знайдено.</p>`;
+        return;
+    }
+
+    let html = `
+        <table class="analytics-table" style="width: 100%; border-collapse: collapse; background: #222; border-radius: 8px; overflow: hidden; margin-top: 10px;">
+            <thead>
+                <tr style="background: #333; color: #ecf0f1; border-bottom: 2px solid #444;">
+                    <th style="padding: 12px; text-align: left;">Учень</th>
+                    <th style="padding: 12px;">Клас</th>
+                    <th style="padding: 12px;">Золото 💰</th>
+                    <th style="padding: 12px; text-align: center;">Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    studentsToShow.forEach(student => {
+        const gold = student.profile?.gold || 0;
+        const name = student.name || "Без імені";
+        const className = student.className || "--";
+        const avatar = student.profile?.avatar || 'assets/img/base.png';
+        
+        // Перевіряємо стан кнопки
+        const isExpanded = (student.id === expandedStudentId);
+
+        // Налаштування стилю кнопки
+        const btnText = isExpanded ? "✖ Закрити" : "📜 Журнал";
+        const btnStyle = isExpanded 
+            ? "background: #e74c3c; color: white;" 
+            : "background: #f1c40f; color: black;";
+
+        html += `
+            <tr style="border-bottom: 1px solid #444;">
+                <td style="padding: 12px; display:flex; align-items:center; gap:10px;">
+                    <div style="width:35px; height:35px; background:#444; border-radius:50%; overflow:hidden;">
+                         <img src="${avatar}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>
+                    <span style="font-size: 1.1em; color: white;">${name}</span>
+                </td>
+                <td style="padding: 12px; text-align:center; color: #ccc;">${className}</td>
+                <td style="padding: 12px; text-align:center; font-weight:bold; color: #f1c40f;">${gold} 💰</td>
+                <td style="padding: 12px; text-align: center;">
+                    <button class="btn-journal-toggle" 
+                            data-id="${student.id}"
+                            style="${btnStyle} border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s;">
+                        ${btnText}
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table>`;
+    
+    // Якщо список довгий і ми не в режимі фокусу - додаємо скрол
+    if (!expandedStudentId && studentsToShow.length > 5) {
+        container.style.maxHeight = "400px";
+        container.style.overflowY = "auto";
+    } else {
+        container.style.maxHeight = "none";
+        container.style.overflowY = "visible";
+    }
+
+    container.innerHTML = html;
+
+    // Додаємо події кліку на кнопки
+    document.querySelectorAll(".btn-journal-toggle").forEach(btn => {
+        btn.onclick = () => toggleJournal(btn.dataset.id);
+    });
+
+    // Якщо учень активний — малюємо його журнал знизу
+    if (expandedStudentId && detailsContainer) {
+        renderStudentJournalDetails(expandedStudentId, detailsContainer);
+    }
+}
+
+function toggleJournal(studentId) {
+    if (expandedStudentId === studentId) {
+        // Клікнули "Закрити" -> скидаємо вибір
+        expandedStudentId = null;
+    } else {
+        // Клікнули "Журнал" -> обираємо учня
+        expandedStudentId = studentId;
+    }
+    // Перемальовуємо
+    renderAnalyticsTable();
+}
+
+function renderStudentJournalDetails(studentId, container) {
+    const student = cachedStudentsForAnalytics.find(s => s.id === studentId);
+    if (!student) return;
+
+    const inventory = student.profile?.inventory || [];
+    
+    let contentHtml = `
+        <div style="background: #1e1e1e; padding: 25px; border-radius: 12px; border: 1px solid #333; animation: slideDown 0.3s ease-out;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; padding-bottom: 15px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #3498db;">🎒 Історія покупок та Інвентар</h3>
+                <span style="color: #777; font-size: 0.9em;">Всього предметів: ${inventory.length}</span>
+            </div>
+    `;
+
+    if (inventory.length === 0) {
+        contentHtml += `<p style="color: #777; font-style: italic; text-align: center; padding: 20px;">Журнал покупок порожній.</p>`;
+    } else {
+        contentHtml += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">`;
+        
+        // Перевертаємо інвентар, щоб нові були зверху
+        [...inventory].reverse().forEach(item => {
+            const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "Недавно";
+            contentHtml += `
+                <div style="background: #2c3e50; padding: 10px; border-radius: 8px; border-left: 3px solid #f1c40f;">
+                    <div style="color: #ecf0f1; font-weight: bold;">${item.name}</div>
+                    <div style="color: #bdc3c7; font-size: 0.8em; margin-top: 5px;">${dateStr}</div>
+                </div>
+            `;
+        });
+        contentHtml += `</div>`;
+    }
+    
+    contentHtml += `</div>`;
+    
+    // CSS анімація для плавної появи
+    const style = document.createElement('style');
+    style.innerHTML = `@keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`;
+    document.head.appendChild(style);
+
+    container.innerHTML = contentHtml;
+}
+
+// ==========================================
+// 📜 ДЕТАЛЬНИЙ ЖУРНАЛ УЧНЯ
+// ==========================================
+async function renderStudentJournal(studentId) {
+    const detailsContainer = document.getElementById("student-journal-details");
+    if (!detailsContainer) return;
+
+    detailsContainer.innerHTML = `
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #444; animation: slideDown 0.3s ease-out;">
+            <h3 style="color: #3498db; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                📜 Історія проходження
+            </h3>
+            <div id="journal-loader" style="color: #aaa;">⏳ Завантаження даних сесій...</div>
+            <div id="journal-list"></div>
+        </div>
+    `;
+
+    try {
+        // Запит до під-колекції 'game_sessions' конкретного учня
+        const sessionsRef = collection(db, "users", studentId, "game_sessions");
+        // Сортуємо за часом (спочатку нові)
+        const q = query(sessionsRef, orderBy("timestamp", "desc"));
+        
+        const snapshot = await getDocs(q);
+        const listContainer = document.getElementById("journal-list");
+        document.getElementById("journal-loader").style.display = 'none';
+
+        if (snapshot.empty) {
+            listContainer.innerHTML = `<p style="color: #777; font-style: italic;">Учень ще не проходив жодного рівня.</p>`;
+            return;
+        }
+
+        let tableHtml = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="color: #888; text-align: left;">
+                        <th style="padding: 8px;">Дата</th>
+                        <th style="padding: 8px;">Тема / Рівень</th>
+                        <th style="padding: 8px;">Результат</th>
+                        <th style="padding: 8px;">Час</th>
+                        <th style="padding: 8px;">Помилки</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const dateObj = data.timestamp ? data.timestamp.toDate() : new Date();
+            const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            // Стилізація результату
+            const isWin = data.status === 'win';
+            const statusStyle = isWin 
+                ? 'color: #2ecc71; font-weight: bold;' 
+                : 'color: #e74c3c; font-weight: bold;';
+            const statusText = isWin ? '✅ ПЕРЕМОГА' : '❌ ПОРАЗКА';
+
+            tableHtml += `
+                <tr style="border-bottom: 1px solid #333;">
+                    <td style="padding: 8px; color: #ccc;">${dateStr}</td>
+                    <td style="padding: 8px; color: white;">
+                        <span style="color: #3498db;">${data.topic || 'Unknown'}</span> 
+                        <span style="color: #777;">(D${data.levelId || '?'})</span>
+                    </td>
+                    <td style="padding: 8px; ${statusStyle}">${statusText}</td>
+                    <td style="padding: 8px; color: #f1c40f;">${data.timeSpent || 0} сек</td>
+                    <td style="padding: 8px; color: #e74c3c;">${data.mistakes || 0}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `</tbody></table>`;
+        listContainer.innerHTML = tableHtml;
+
+    } catch (error) {
+        console.error("Error loading journal:", error);
+        if(detailsContainer) {
+            detailsContainer.innerHTML += `<p style="color: red;">Помилка завантаження історії: ${error.message}</p>`;
+        }
+    }
+}
