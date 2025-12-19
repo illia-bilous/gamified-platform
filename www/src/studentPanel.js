@@ -365,7 +365,8 @@ export async function initStudentPanel() {
     startLiveGoldTracker(user.uid);
 
     try {
-        cachedShopItems = await getShopItems();
+        console.log("🛒 Завантажуємо магазин вчителя:", user.teacherUid);
+        cachedShopItems = await getShopItems(user.teacherUid);
     } catch (e) {
         cachedShopItems = { micro: [], medium: [], large: [] };
     }
