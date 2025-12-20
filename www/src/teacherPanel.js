@@ -69,25 +69,42 @@ export async function renderTeacherDashboard(containerId) {
     const myDisplayId = currentUser.teacherCode || currentUser.uid;
     const { classes, totalStudents } = await getUniqueClasses(currentUser.uid);
 
-    container.innerHTML = `
-        <div class="teacher-header">
-            <h2>📚 Мої класи</h2>
-            <div style="background: #333; padding: 15px; border-radius: 8px; border: 2px solid var(--accent-gold); display: inline-block; margin-top: 10px; text-align: center;">
-                <span style="color: #aaa; font-size: 0.9em;">Ваш ID для учнів:</span><br>
-                <strong style="color: #fff; font-family: monospace; font-size: 2em; letter-spacing: 3px;">${myDisplayId}</strong>
-            </div>
-            <p style="margin-top: 10px;">Всього учнів у вашій групі: ${totalStudents}</p>
+   container.innerHTML = `
+    <div class="page-header-container">
+        <h2 class="page-header-title">📚 Мої Класи</h2>
+        <div class="page-header-line"></div>
+        <p class="page-header-description">Керуйте своїми класами та переглядайте успішність учнів.</p>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 40px;">
+        <div class="teacher-id-badge">
+            Ваш ID для учнів: <span>${myDisplayId}</span>
         </div>
-        <div id="class-cards" class="class-grid"></div>
+    </div>
+
+    <p style="text-align:center; color: #bdc3c7; font-size: 1.2em; margin-bottom: 30px;">
+        Всього учнів у вашій групі: <strong style="color: #fff;">${totalStudents}</strong>
+    </p>
+
+    <div id="class-cards" class="class-grid"></div>
+`;
+
+const grid = document.getElementById("class-cards");
+
+classes.forEach(className => {
+    const card = document.createElement("div");
+    // Додаємо клас, щоб картки теж були красивими
+    card.className = "class-card"; 
+    
+    // Внутрішній HTML картки
+    card.innerHTML = `
+        <h3>${className}</h3>
+        <p>Переглянути успішність →</p>
     `;
-    const grid = document.getElementById("class-cards");
-    classes.forEach(className => {
-        const card = document.createElement("div");
-        card.className = "class-card";
-        card.innerHTML = `<h3>${className}</h3><p>Переглянути успішність</p>`;
-        card.addEventListener('click', () => { renderClassLeaderboard(className); });
-        grid.appendChild(card);
-    });
+    
+    card.addEventListener('click', () => { renderClassLeaderboard(className); });
+    grid.appendChild(card);
+});
     if (classes.length === 0) grid.innerHTML = '<p style="text-align: center;">У вас ще немає зареєстрованих учнів.</p>';
 }
 
@@ -179,18 +196,24 @@ async function renderStudentProfile(student) {
 
     // 1. Підготовка даних (Інвентар)
     const inventory = student.profile?.inventory || [];
+    
+    // Групуємо однакові предмети: { "Назва": 5, "Інша": 1 }
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
         acc[itemName] = (acc[itemName] || 0) + 1;
         return acc;
     }, {});
 
-    const inventoryList = Object.keys(stackedInventory).length > 0
+    // Генеруємо HTML список з кнопками
+    const inventoryListHtml = Object.keys(stackedInventory).length > 0
         ? Object.keys(stackedInventory).map(name => `
-            <div style="background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; font-size: 0.9em; text-align: left; color: #ecf0f1; border-left: 4px solid #3498db;">
-                ${name} (x${stackedInventory[name]})
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
+                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${stackedInventory[name]})</b></span>
+                <button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
+                    🗑️ Списати
+                </button>
             </div>`).join('')
-        : '<p style="opacity: 0.5; font-style: italic; padding: 20px;">Нагороди ще не придбані</p>';
+        : '<p style="opacity: 0.5; font-style: italic; padding: 20px; text-align: center;">Нагороди ще не придбані</p>';
         
     const goldDisplay = student.profile?.gold || 0; 
 
@@ -234,15 +257,18 @@ async function renderStudentProfile(student) {
                     <h3 style="color: #3498db; border-top: 1px solid #333; padding-top: 25px; margin-top: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <span>🎁</span> Інвентар
                     </h3>
-                    <div id="inventory-container" style="max-height: 250px; overflow-y: auto;">${inventoryList}</div>
+                    <div id="inventory-container" style="max-height: 250px; overflow-y: auto;">
+                        ${inventoryListHtml}
+                    </div>
                 </div>
             </div>
         </div>
     `;
 
     // 3. ЛОГІКА КНОПОК
+
+    // Кнопка "Назад"
     document.getElementById("btn-back-to-list").onclick = () => {
-        const teacher = getCurrentUser();
         if (student.className && typeof renderClassLeaderboard === 'function') {
             renderClassLeaderboard(student.className);
         } else {
@@ -250,7 +276,7 @@ async function renderStudentProfile(student) {
         }
     };
 
-    // ОНОВЛЕННЯ ЗОЛОТА
+    // Кнопка "Оновити золото"
     document.getElementById("btn-save-gold").onclick = async () => {
         const input = document.getElementById("gold-input");
         const newVal = parseInt(input.value);
@@ -265,15 +291,70 @@ async function renderStudentProfile(student) {
             await updateDoc(studentRef, { "profile.gold": newVal });
             alert("✅ Баланс золота успішно змінено!");
             
-            const updatedStudent = { ...student };
-            if (!updatedStudent.profile) updatedStudent.profile = {};
-            updatedStudent.profile.gold = newVal;
-            renderStudentProfile(updatedStudent);
+            // Оновлюємо локальний об'єкт і перемальовуємо
+            student.profile.gold = newVal;
+            renderStudentProfile(student);
         } catch (e) {
             console.error("Firebase Update Error:", e);
-            alert("❌ Помилка: не вдалося оновити базу даних.");
+            alert("❌ Помилка оновлення.");
         }
     };
+
+    // 🔥 ЛОГІКА СПИСАННЯ НАГОРОД (Нове)
+    // Знаходимо всі кнопки видалення, які ми щойно намалювали
+    container.querySelectorAll('.btn-delete-reward').forEach(btn => {
+        btn.onclick = async () => {
+            const itemName = btn.dataset.name;
+            const success = await removeStudentItem(student.uid, itemName);
+            
+            if (success) {
+                // Оновлюємо локальний об'єкт інвентаря, щоб екран оновився миттєво
+                const idx = student.profile.inventory.findIndex(i => i.name === itemName);
+                if (idx !== -1) {
+                    student.profile.inventory.splice(idx, 1);
+                    renderStudentProfile(student); // Перемальовуємо профіль
+                }
+            }
+        };
+    });
+}
+
+
+// Функція для фізичного видалення предмету з бази даних
+async function removeStudentItem(studentId, itemName) {
+    if (!confirm(`Ви впевнені, що хочете списати (видалити) "${itemName}"?`)) return false;
+
+    try {
+        const studentRef = doc(db, "users", studentId);
+        const snapshot = await getDoc(studentRef);
+        
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            let inventory = data.profile.inventory || [];
+
+            // Шукаємо індекс першого предмета з такою назвою
+            const indexToRemove = inventory.findIndex(item => item.name === itemName);
+
+            if (indexToRemove !== -1) {
+                // Видаляємо 1 елемент за знайденим індексом
+                inventory.splice(indexToRemove, 1);
+
+                // Оновлюємо базу
+                await updateDoc(studentRef, {
+                    "profile.inventory": inventory
+                });
+                
+                return true; // Успіх
+            } else {
+                alert("Помилка: Цей предмет вже відсутній у базі.");
+                return false;
+            }
+        }
+    } catch (e) {
+        console.error("Error removing item:", e);
+        alert("Помилка списання: " + e.message);
+        return false;
+    }
 }
 
 // ==========================================
@@ -283,10 +364,12 @@ async function renderLevelEditor() {
     const container = document.getElementById("view-tasks"); 
     if (!container) return;
 
+    // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
     container.innerHTML = `
-        <div class="teacher-header" style="text-align:center;">
-            <h2>📝 Конструктор Рівнів</h2>
-            <p>Налаштуйте завдання, час та нагороду для кожного рівня.</p>
+        <div class="page-header-container">
+            <h2 class="page-header-title">📝 Конструктор Рівнів</h2>
+            <div class="page-header-line"></div>
+            <p class="page-header-description">Налаштуйте завдання, час та нагороду для кожного рівня.</p>
         </div>
 
         <div style="max-width: 800px; margin: 0 auto; background: #222; padding: 20px; border-radius: 10px; border: 1px solid #444;">
@@ -445,13 +528,16 @@ async function renderTreasureEditor() {
     const user = getCurrentUser();
     if (!user) return;
 
-    // Функція для повного оновлення екрану (викликаємо після додавання/видалення)
+    // Функція для повного оновлення екрану
     const refreshEditor = async () => {
+        // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
         container.innerHTML = `
-            <div class="teacher-header" style="text-align: center; margin-bottom: 30px;">
-                <h2 style="color: var(--accent-gold); font-size: 2em; margin-bottom: 10px;">💎 Редактор Скарбниці</h2>
-                <p style="color: #aaa;">Додавайте та видаляйте нагороди (макс. 10 у категорії).</p>
+            <div class="page-header-container">
+                <h2 class="page-header-title">💎 Редактор Скарбниці</h2>
+                <div class="page-header-line"></div>
+                <p class="page-header-description">Додавайте та видаляйте нагороди (макс. 10 у категорії).</p>
             </div>
+
             <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; align-items: flex-start;">
                 <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
             </div>
@@ -467,7 +553,7 @@ async function renderTreasureEditor() {
                 await saveShopItems(user.uid, updatedData);
             };
 
-            // Рендер колонок. Передаємо refreshEditor, щоб колонка могла оновити весь екран
+            // Рендер колонок
             renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71", refreshEditor);
             renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db", refreshEditor);
             renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6", refreshEditor);

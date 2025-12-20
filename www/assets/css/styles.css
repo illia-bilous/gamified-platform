@@ -724,63 +724,7 @@ label {
     margin-left: 5px;
     letter-spacing: 1px;
 }
-/* =========================================
-   13. ЛІДЕРБОРД (ТАБЛИЦЯ)
-   ========================================= */
 
-.leaderboard-wrapper {
-    width: 100%;
-    max-width: 800px;
-    margin: 0 auto;
-    background: #1a1a2e; /* Темний фон */
-    border-radius: 15px;
-    padding: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    border: 1px solid #444;
-}
-
-.leaderboard-table {
-    width: 100%;
-    border-collapse: collapse;
-    color: white;
-}
-
-.leaderboard-table th {
-    background-color: #0f3460;
-    padding: 15px;
-    font-size: 1.1rem;
-    color: var(--accent-gold);
-    border-bottom: 2px solid var(--accent-gold);
-}
-
-.leaderboard-table td {
-    padding: 15px;
-    border-bottom: 1px solid #333;
-    font-size: 1rem;
-}
-
-/* Чередування рядків (зебра) */
-.leaderboard-table tr:nth-child(even) {
-    background-color: rgba(255,255,255,0.03);
-}
-
-/* Стиль для "МЕНЕ" (поточного користувача) */
-.leaderboard-table tr.my-rank {
-    background-color: rgba(46, 204, 113, 0.2); /* Зеленувата підсвітка */
-    border-left: 4px solid var(--accent-green);
-}
-
-.rank-col {
-    font-weight: bold;
-    font-size: 1.2rem;
-    text-align: center;
-}
-
-.gold-col {
-    color: #ffd700;
-    font-weight: bold;
-    text-align: center;
-}
 
 /* --- СТИЛІ ПАНЕЛІ ВЧИТЕЛЯ (КЛАСИ) --- */
 
@@ -903,106 +847,121 @@ label {
     100% { transform: translateX(0); }
 }
 
-/* --- СТИЛІ ЛІДЕРБОРДУ --- */
+/* =========================================
+   13. ЛІДЕРБОРД (ТАБЛИЦЯ) - ОПТИМІЗОВАНО
+   ========================================= */
 
-.leaderboard-table {
+/* Контейнер таблиці */
+.leaderboard-wrapper {
     width: 100%;
-    border-collapse: separate; 
-    border-spacing: 0 12px;    
+    max-width: 800px;
+    margin: 0 auto;
+    background: #1a1a2e; /* Темний фон контейнера */
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 1px solid #444;
 }
 
-/* 1. Базовий вигляд рядка (чужий) */
+/* Сама таблиця */
+.leaderboard-table {
+    width: 100%;
+    border-collapse: separate; /* Важливо для заокруглення рядків */
+    border-spacing: 0 12px;    /* Відступи між рядками */
+    color: white;
+}
+
+/* Шапка таблиці */
+.leaderboard-table th {
+    background-color: transparent;
+    padding: 15px;
+    font-size: 1.1rem;
+    color: var(--accent-gold);
+    border-bottom: 2px solid var(--accent-gold);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: left;
+}
+
+/* --- СТИЛІ РЯДКІВ (ROWS) --- */
 .leaderboard-table tr {
-    background-color: #252525;
+    background-color: #252525; /* Базовий темний фон */
     transition: transform 0.2s ease, box-shadow 0.2s ease;
-    border-radius: 8px; /* Заокруглення */
-    
-    /* Хитрість: щоб бордер був на всьому рядку */
-    border: 1px solid rgba(255,255,255,0.05); 
+    border-radius: 8px;
+    /* Хитрість для рамки навколо всього рядка */
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
 /* Стилі комірок */
 .leaderboard-table td {
     padding: 15px;
-    border: none; /* Прибираємо старі рамки */
+    border: none;
+    vertical-align: middle;
 }
-/* Заокруглення кутів рядка */
+
+/* Заокруглення кутів першої і останньої комірки в рядку */
 .leaderboard-table tr td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
 .leaderboard-table tr td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
 
+/* Колонки */
+.rank-col { font-weight: bold; font-size: 1.2rem; text-align: center; width: 60px; }
+.gold-col { color: #ffd700; font-weight: bold; text-align: center; }
 
-/* --- СТИЛІ ДЛЯ ЧУЖИХ (Звичайні градієнти) --- */
+/* --- ТОП 3 ГРАВЦІ (ЧУЖІ) --- */
 
-/* 🥇 1 Місце (Чужий) */
+/* 🥇 1 Місце */
 tr.rank-1 {
     background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, #252525 100%);
-    border-left: 4px solid #FFD700; /* Лише зліва */
+    border-left: 4px solid #FFD700;
 }
 tr.rank-1 td.rank-col { font-size: 1.5em; text-shadow: 0 0 10px #FFD700; }
 
-/* 🥈 2 Місце (Чужий) */
+/* 🥈 2 Місце */
 tr.rank-2 {
     background: linear-gradient(90deg, rgba(192, 192, 192, 0.15) 0%, #252525 100%);
     border-left: 4px solid #C0C0C0;
 }
 tr.rank-2 td.rank-col { font-size: 1.3em; text-shadow: 0 0 10px #C0C0C0; }
 
-/* 🥉 3 Місце (Чужий) */
+/* 🥉 3 Місце */
 tr.rank-3 {
     background: linear-gradient(90deg, rgba(205, 127, 50, 0.15) 0%, #252525 100%);
     border-left: 4px solid #CD7F32;
 }
 tr.rank-3 td.rank-col { font-size: 1.2em; text-shadow: 0 0 10px #CD7F32; }
 
+/* --- ПОТОЧНИЙ КОРИСТУВАЧ (Я) --- */
 
-/* --- 🔥 СТИЛІ ДЛЯ МЕНЕ (is-current-user) --- */
-
-/* 1. Я не в топі (4+ місце) -> Все зелене */
+/* Базовий стиль "Мене" (якщо не в топі) */
 tr.is-current-user {
-    /* Рамка з усіх боків */
-    border: 2px solid #2ecc71 !important; 
-    
-    /* Зелений фон (перекриває все) */
+    border: 2px solid #2ecc71 !important; /* Зелена рамка */
     background: rgba(46, 204, 113, 0.15) !important;
-    
-    /* Внутрішнє зелене сяйво */
     box-shadow: inset 0 0 20px rgba(46, 204, 113, 0.3);
-    
-    /* Трохи збільшуємо, щоб виділити */
     transform: scale(1.02);
-    z-index: 10;
+    
+    /* 🔥 ВАЖЛИВО: Z-index менший за sidebar (який 10), щоб не перекривало меню */
+    z-index: 5; 
     position: relative;
 }
 
-/* 2. Я на 1-му місці -> ЗОЛОТА РАМКА + ЗЕЛЕНИЙ ФОН */
+/* Якщо "Я" на 1-му місці */
 tr.rank-1.is-current-user {
-    border: 3px solid #FFD700 !important; /* Золота рамка */
-    border-left: 3px solid #FFD700 !important; /* Перебиваємо дефолтний left-border */
-    
-    background: rgba(46, 204, 113, 0.2) !important; /* Зелений фон всередині */
-    
-    /* Подвійне сяйво: Золоте зовні, Зелене всередині */
+    border: 3px solid #FFD700 !important;
+    border-left: 3px solid #FFD700 !important;
+    background: rgba(46, 204, 113, 0.2) !important;
     box-shadow: 0 0 25px rgba(255, 215, 0, 0.5), inset 0 0 20px rgba(46, 204, 113, 0.4);
 }
 
-/* 3. Я на 2-му місці -> СРІБНА РАМКА + ЗЕЛЕНИЙ ФОН */
+/* Якщо "Я" на 2-му місці */
 tr.rank-2.is-current-user {
-    border: 3px solid #C0C0C0 !important; 
-    border-left: 3px solid #C0C0C0 !important;
-    
+    border: 3px solid #C0C0C0 !important;
     background: rgba(46, 204, 113, 0.2) !important;
-    
-    box-shadow: 0 0 20px rgba(192, 192, 192, 0.4), inset 0 0 20px rgba(46, 204, 113, 0.4);
 }
 
-/* 4. Я на 3-му місці -> БРОНЗОВА РАМКА + ЗЕЛЕНИЙ ФОН */
+/* Якщо "Я" на 3-му місці */
 tr.rank-3.is-current-user {
-    border: 3px solid #CD7F32 !important; 
-    border-left: 3px solid #CD7F32 !important;
-    
+    border: 3px solid #CD7F32 !important;
     background: rgba(46, 204, 113, 0.2) !important;
-    
-    box-shadow: 0 0 20px rgba(205, 127, 50, 0.4), inset 0 0 20px rgba(46, 204, 113, 0.4);
 }
 
 /* 14. ТАБЛИЦЯ АНАЛІТИКИ */
@@ -1090,4 +1049,178 @@ input::-webkit-inner-spin-button {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+}
+
+
+/* ============================================================
+   ГЛОБАЛЬНИЙ СТИЛЬ: ВЕЛИКИЙ ШРИФТ (BIG TEXT MODE)
+   ============================================================ */
+
+/* 1. ПІДПИСИ (Назви полів: "Тема", "Питання") */
+#teacher-panel label,
+#student-panel label,
+.panel-view label,
+.form-label {
+    color: #ffffff !important;      /* Яскраво білий */
+    font-size: 1.3em !important;    /* 🔥 ЗБІЛЬШЕНО (було 1.1em) */
+    font-weight: 700 !important;    /* Жирний шрифт */
+    margin-bottom: 12px;            /* Більший відступ до поля */
+    display: block;
+    text-shadow: 0 2px 4px rgba(0,0,0,1); /* Глибока тінь для контрасту */
+    letter-spacing: 0.8px;          /* Розтягнуті літери */
+}
+
+/* 2. ДОПОМІЖНИЙ ТЕКСТ (Опис під полями) */
+.panel-view p, 
+.panel-view small, 
+.input-description,
+.helper-text {
+    color: #dcdcdc !important;      /* Майже білий (світло-сірий) */
+    font-size: 1.1em !important;    /* 🔥 ЗБІЛЬШЕНО (тепер читається без напруги) */
+    line-height: 1.6;               /* Повітря між рядками */
+    margin-bottom: 20px;
+    opacity: 0.9;
+}
+
+/* 3. ЗАГОЛОВКИ СЕКЦІЙ (H2, H3) */
+.panel-view h2, 
+.panel-view h3, 
+.panel-view h4 {
+    color: #f1c40f !important;      /* Золотий */
+    font-size: 1.8em !important;    /* 🔥 Великі заголовки */
+    text-transform: uppercase;
+    text-shadow: 3px 3px 0px rgba(0,0,0,0.6);
+    margin-bottom: 25px;
+    border-bottom: 2px solid #f1c40f; /* Лінія під заголовком */
+    padding-bottom: 10px;
+    display: inline-block;
+}
+
+/* 4. ПОЛЯ ВВОДУ (Input/Select/Textarea) */
+#teacher-panel input[type="text"],
+#teacher-panel input[type="number"],
+#teacher-panel select,
+#teacher-panel textarea {
+    background-color: #2c3e50;      /* Темний фон */
+    color: #ffffff;                 /* Білий текст */
+    border: 2px solid #576574;      /* Товстіша рамка */
+    
+    font-size: 1.2em !important;    /* 🔥 ЗБІЛЬШЕНО (текст, який ти друкуєш) */
+    padding: 14px 18px;             /* 🔥 Великі внутрішні відступи */
+    
+    border-radius: 8px;             /* Заокруглення */
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 25px;            /* Відступ між сусідніми полями */
+    transition: all 0.2s ease;      /* Плавна анімація */
+}
+
+/* Ефект при натисканні (Фокус) */
+#teacher-panel input:focus,
+#teacher-panel select:focus,
+#teacher-panel textarea:focus {
+    border-color: #f1c40f;          /* Золота рамка */
+    background-color: #34495e;      /* Світлішає фон */
+    box-shadow: 0 0 15px rgba(241, 196, 15, 0.4); /* Світіння */
+    outline: none;
+    transform: scale(1.01);         /* Легке збільшення при кліку */
+}
+
+/* ============================================================
+   СТИЛІ ДЛЯ ЗАГОЛОВКІВ ВІКОН ТА БЕЙДЖА ID
+   ============================================================ */
+
+/* 1. Перевизначаємо стиль заголовка, щоб він був по центру */
+.panel-view h2 {
+    text-align: center !important;   /* Центруємо текст */
+    display: block !important;       /* На всю ширину */
+    width: 100%;
+    border-bottom: none !important;  /* Прибираємо лінію під текстом (буде виглядати краще без неї) */
+    margin-bottom: 5px !important;   /* Малий відступ до ID */
+    font-size: 2.5em !important;     /* Дуже великий розмір */
+    letter-spacing: 2px;             /* Відступ між літерами */
+}
+
+/* 2. Стиль для рамки з ID */
+.teacher-id-badge {
+    display: inline-block;
+    background: rgba(0, 0, 0, 0.4); /* Напівпрозорий фон */
+    border: 3px solid #f1c40f;      /* СУЦІЛЬНА золота рамка */
+    border-radius: 50px;            /* ОВАЛЬНА форма */
+    padding: 10px 40px;             /* Відступи всередині рамки */
+    margin-bottom: 40px;            /* Відступ знизу */
+    
+    color: #ffffff;
+    font-size: 1.4em;
+    font-weight: bold;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5); /* Тінь */
+}
+
+/* Колір самого коду ID */
+.teacher-id-badge span {
+    color: #f1c40f; /* Золотий колір для самого коду */
+    margin-left: 10px;
+    font-family: monospace;
+    font-size: 1.3em;
+}
+
+/* ============================================================
+   УНІВЕРСАЛЬНІ ЗАГОЛОВКИ СТОРІНОК (УЧЕНЬ + ВЧИТЕЛЬ)
+   ============================================================ */
+
+/* 1. Блок заголовка (обгортка) */
+.page-header-container {
+    text-align: center;
+    width: 100%;
+    margin-bottom: 30px;
+    position: relative;
+}
+
+/* 2. Сам текст заголовка */
+.page-header-title {
+    font-size: 2.8em !important;    /* Великий розмір */
+    color: #f1c40f !important;      /* Золотий колір (як у вчителя) */
+    text-transform: uppercase;
+    font-weight: 800;
+    margin: 0;
+    text-shadow: 0 5px 10px rgba(0,0,0,0.8);
+    letter-spacing: 2px;
+}
+
+/* 3. Декоративна лінія під заголовком */
+.page-header-line {
+    height: 4px;
+    background: linear-gradient(90deg, transparent, #f1c40f, transparent); /* Градієнтна лінія */
+    width: 60%;                     /* Не на всю ширину */
+    margin: 10px auto 0 auto;       /* Центрування */
+    border-radius: 2px;
+    opacity: 0.8;
+}
+
+/* 4. Білі підзаголовки для секцій (наприклад, всередині Скарбниці) */
+.section-sub-header {
+    color: #ffffff !important;
+    font-size: 1.5em !important;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2); /* Тонка біла лінія */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ============================================================
+   СТИЛЬ ДЛЯ ОПИСУ ПІД ЗАГОЛОВКОМ СТОРІНКИ
+   ============================================================ */
+.page-header-description {
+    color: #e0e0e0 !important; /* Майже білий колір для гарного контрасту */
+    font-size: 1.15em !important;
+    text-align: center;
+    margin-top: 15px;          /* Відступ від золотої лінії */
+    margin-bottom: 35px;       /* Відступ до контенту */
+    max-width: 800px;          /* Щоб текст не розтягувався занадто широко */
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.5;
+    opacity: 0.9;
 }
