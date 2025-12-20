@@ -7,6 +7,8 @@ import { db } from "./firebase.js";
 import { sendConfigToUnity } from "./gameBridge.js";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+let leaderboardUnsubscribe = null;
+
 // ==========================================
 // 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
 // ==========================================
@@ -232,10 +234,17 @@ function renderInventory(currentUser) {
 // ==========================================
 // 🏆 ФУНКЦІЇ ВІДОБРАЖЕННЯ (UI)
 // ==========================================
-async function renderLeaderboard(currentUser) {
+function renderLeaderboard(currentUser) {
     const container = document.getElementById("view-leaderboard");
     if (!container) return;
 
+    // 1. Якщо вже є активне прослуховування - вимикаємо його, щоб не було дублікатів
+    if (leaderboardUnsubscribe) {
+        leaderboardUnsubscribe();
+        leaderboardUnsubscribe = null;
+    }
+
+    // 2. Малюємо "скелет" таблиці один раз
     container.innerHTML = `
         <div class="teacher-header"><h2>🏆 Рейтинг класу ${currentUser.className || ""}</h2></div>
         <div style="background: #222; padding: 20px; border-radius: 10px; min-height: 300px;">
@@ -252,14 +261,18 @@ async function renderLeaderboard(currentUser) {
     `;
 
     const tbody = document.getElementById("leaderboard-body");
-    try {
-        const q = query(
-            collection(db, "users"),
-            where("role", "==", "student"),
-            where("className", "==", currentUser.className),
-            where("teacherUid", "==", currentUser.teacherUid)
-        );
-        const querySnapshot = await getDocs(q);
+
+    // 3. Створюємо запит
+    const q = query(
+        collection(db, "users"),
+        where("role", "==", "student"),
+        where("className", "==", currentUser.className),
+        where("teacherUid", "==", currentUser.teacherUid)
+    );
+
+    // 4. 🔥 ГОЛОВНА ЗМІНА: onSnapshot замість getDocs
+    // Ця функція запускається щоразу, коли в базі змінюються дані
+    leaderboardUnsubscribe = onSnapshot(q, (querySnapshot) => {
         let classmates = [];
 
         querySnapshot.forEach((doc) => {
@@ -268,6 +281,7 @@ async function renderLeaderboard(currentUser) {
             classmates.push({ ...data, uid: doc.id, cleanGold: safeGold });
         });
         
+        // Сортуємо: більше золота -> вище місце
         classmates.sort((a, b) => b.cleanGold - a.cleanGold);
 
         if (classmates.length === 0) {
@@ -275,34 +289,40 @@ async function renderLeaderboard(currentUser) {
             return;
         }
 
+        // Очищаємо таблицю перед новим малюванням
         tbody.innerHTML = "";
+        
+        // Малюємо кожного учня
         classmates.forEach((student, index) => {
             const tr = document.createElement("tr");
             let rankClass = "rank-other"; 
             let rankIcon = `#${index + 1}`;
+            
             if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
             else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
             else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
 
             tr.className = rankClass;
+            // Підсвічуємо, якщо це ТИ
             if (student.uid === currentUser.uid) tr.classList.add("is-current-user");
 
-            let ava = student.profile?.avatar || 'assets/img/boy.png';
+            let ava = student.profile?.avatar || 'assets/img/base.png';
             if (ava.includes('assets/avatars/')) ava = ava.replace('assets/avatars/', 'assets/img/');
 
             tr.innerHTML = `
                 <td class="rank-col" style="font-weight:bold;">${rankIcon}</td>
                 <td class="name-col" style="font-size: 1.1em; color: white; display: flex; align-items: center; gap: 10px;">
-                    <img src="${ava}" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;" onerror="this.src='assets/img/boy.png'">
+                    <img src="${ava}" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;" onerror="this.src='assets/img/base.png'">
                     ${student.name}
                 </td>
                 <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.cleanGold} 💰</td>
             `;
             tbody.appendChild(tr);
         });
-    } catch (error) {
+    }, (error) => {
+        console.error("Помилка лідерборду:", error);
         tbody.innerHTML = `<tr><td colspan="3" style="color:#e74c3c; text-align:center;">Помилка завантаження</td></tr>`;
-    }
+    });
 }
 
 function updateHomeDisplay(currentUser) {
