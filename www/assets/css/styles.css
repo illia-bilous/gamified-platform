@@ -75,9 +75,6 @@ input, select {
     padding: 12px;
     margin-bottom: 15px;
     border-radius: 10px;
-    border: 2px solid #a1887f;
-    background-color: #fff8e1;
-    font-size: 16px;
     box-sizing: border-box;
     outline: none;
 }
@@ -148,7 +145,7 @@ label {
     border-right: 2px solid #3e2723;
     color: var(--text-light);
     flex-shrink: 0;
-    z-index: 10;
+    z-index: 1000;
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
 }
 
@@ -393,18 +390,7 @@ label {
     align-items: center;
 }
 
-/* Заголовки всередині панелі (Скарбниця, Лідерборд...) */
-.main-panel h2 {
-    color: var(--accent-gold);
-    text-shadow: 3px 3px 0 #000;      /* Глибока чорна тінь */
-    text-align: center;
-    font-size: 3rem;                /* 🔥 ЗНАЧНО БІЛЬШИЙ ШРИФТ */
-    margin-bottom: 30px;
-    margin-top: 10px;
-    text-transform: uppercase;        /* Великі літери */
-    letter-spacing: 2px;              /* Відступ між літерами */
-    font-weight: 900;                 /* Дуже жирний */
-}
+
 
 /* =========================================
    7. ГРА (UNITY CONTAINER)
