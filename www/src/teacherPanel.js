@@ -442,124 +442,167 @@ async function renderTreasureEditor() {
     const container = document.getElementById("treasury-content");
     if (!container) return;
 
-    container.innerHTML = `
-        <div class="teacher-header" style="text-align: center; margin-bottom: 30px;">
-            <h2 style="color: var(--accent-gold); font-size: 2em; margin-bottom: 10px;">💎 Редактор Скарбниці</h2>
-            <p style="color: #aaa;">Налаштуйте товари, які зможуть купувати ваші учні.</p>
-        </div>
-        <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-            <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
-        </div>
-    `;
-
     const user = getCurrentUser();
     if (!user) return;
 
-    try {
-        // Завантажуємо дані САМЕ ЦЬОГО вчителя (або стандартні, якщо пусто)
-        const shopData = await getShopItems(user.uid);
-        
-        const grid = document.getElementById("treasury-grid-editor");
-        grid.innerHTML = ""; // Очистити лоадер
+    // Функція для повного оновлення екрану (викликаємо після додавання/видалення)
+    const refreshEditor = async () => {
+        container.innerHTML = `
+            <div class="teacher-header" style="text-align: center; margin-bottom: 30px;">
+                <h2 style="color: var(--accent-gold); font-size: 2em; margin-bottom: 10px;">💎 Редактор Скарбниці</h2>
+                <p style="color: #aaa;">Додавайте та видаляйте нагороди (макс. 10 у категорії).</p>
+            </div>
+            <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; align-items: flex-start;">
+                <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
+            </div>
+        `;
 
-        // Функція збереження, яка оновлює загальний об'єкт і відправляє в базу
-        const handleSave = async (updatedData) => {
-            await saveShopItems(user.uid, updatedData);
-        };
+        try {
+            const shopData = await getShopItems(user.uid);
+            const grid = document.getElementById("treasury-grid-editor");
+            grid.innerHTML = ""; 
 
-        // Рендер трьох колонок
-        renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71");
-        renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db");
-        renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6");
+            // Функція збереження в базу
+            const handleSave = async (updatedData) => {
+                await saveShopItems(user.uid, updatedData);
+            };
 
-    } catch (e) { 
-        console.error("Error loading shop:", e);
-        container.innerHTML += `<p style="color:red; text-align:center;">Помилка завантаження: ${e.message}</p>`;
-    }
+            // Рендер колонок. Передаємо refreshEditor, щоб колонка могла оновити весь екран
+            renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71", refreshEditor);
+            renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db", refreshEditor);
+            renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6", refreshEditor);
+
+        } catch (e) {
+            console.error("Error loading shop:", e);
+            container.innerHTML += `<p style="color:red; text-align:center;">Помилка: ${e.message}</p>`;
+        }
+    };
+
+    // Запускаємо перший раз
+    refreshEditor();
 }
 
 // Допоміжна функція для рендеру колонки редагування
-function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color) {
+function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color, onRefresh) {
     const col = document.createElement("div");
-    col.style.cssText = "flex: 1; min-width: 300px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
+    col.style.cssText = "flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
     
-    col.innerHTML = `<h3 style="color: ${color}; margin-bottom: 15px; text-align: center;">${title}</h3>`;
-    
-    const list = fullShopData[categoryKey] || [];
+    // Переконуємось, що масив існує
+    if (!fullShopData[categoryKey]) fullShopData[categoryKey] = [];
+    const list = fullShopData[categoryKey];
 
+    // Заголовок з лічильником
+    col.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+            <h3 style="color: ${color}; margin:0;">${title}</h3>
+            <span style="font-size: 0.8em; color: #777;">${list.length}/10</span>
+        </div>
+    `;
+    
+    // Контейнер для карток
+    const cardsContainer = document.createElement("div");
+    col.appendChild(cardsContainer);
+
+    // 1. РЕНДЕР ІСНУЮЧИХ ТОВАРІВ
     list.forEach((item, index) => {
         const card = document.createElement("div");
-        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333;";
+        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; position: relative;";
         
         card.innerHTML = `
             <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Назва товару:</label>
-                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 8px; background: #111; color: white; border: 1px solid #444; border-radius: 5px;">
+                <label style="font-size: 0.75em; color: #777;">Назва:</label>
+                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 6px; background: #111; color: white; border: 1px solid #444; border-radius: 4px;">
             </div>
             
             <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Опис:</label>
-                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 8px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 5px;">
+                <label style="font-size: 0.75em; color: #777;">Опис:</label>
+                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 6px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px;">
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                <div style="width: 45%;">
-                    <label style="font-size: 0.8em; color: #f1c40f; display: block; margin-bottom: 2px;">Ціна (💰):</label>
-                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 8px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 5px; font-weight: bold;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 10px;">
+                <div style="flex-grow: 1;">
+                    <label style="font-size: 0.75em; color: #f1c40f;">Ціна:</label>
+                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
                 </div>
-                <button class="btn-save-item" style="width: 45%; padding: 8px; background: ${color}; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    💾 Зберегти
-                </button>
+                
+                <button class="btn-save" style="padding: 6px 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">💾</button>
+                
+                <button class="btn-delete" style="padding: 6px 12px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">🗑️</button>
             </div>
-            <div class="save-feedback" style="text-align: center; font-size: 0.8em; margin-top: 5px; height: 1.2em;"></div>
+            <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
         `;
 
-        const btn = card.querySelector(".btn-save-item");
-        const feedback = card.querySelector(".save-feedback");
+        // Логіка видалення
+        card.querySelector(".btn-delete").onclick = async () => {
+            if (confirm(`Видалити "${item.name}"?`)) {
+                list.splice(index, 1); // Видаляємо з масиву
+                await onSave(fullShopData); // Зберігаємо в БД
+                onRefresh(); // Перемальовуємо екран
+            }
+        };
 
-        btn.onclick = async () => {
-            // 1. Збираємо дані з полів
+        // Логіка локального збереження (редагування)
+        const btnSave = card.querySelector(".btn-save");
+        btnSave.onclick = async () => {
             const newName = card.querySelector(".inp-name").value;
             const newDesc = card.querySelector(".inp-desc").value;
             const newPrice = parseInt(card.querySelector(".inp-price").value);
+            const msg = card.querySelector(".feedback-msg");
 
-            if (!newName || isNaN(newPrice)) {
-                alert("Назва і ціна обов'язкові!");
-                return;
-            }
+            if (!newName || isNaN(newPrice)) return alert("Заповніть назву та ціну!");
 
-            btn.disabled = true;
-            btn.style.opacity = "0.5";
-            feedback.textContent = "Збереження...";
-
-            // 2. Оновлюємо локальний об'єкт даних
-            fullShopData[categoryKey][index] = {
-                id: item.id, // ID не змінюємо
-                name: newName,
-                desc: newDesc,
-                price: newPrice
-            };
-
-            // 3. Відправляємо весь об'єкт на збереження
-            const success = await onSave(fullShopData);
-
-            if (success) {
-                feedback.textContent = "✅ Зміни збережено!";
-                feedback.style.color = "#2ecc71";
-            } else {
-                feedback.textContent = "❌ Помилка!";
-                feedback.style.color = "#e74c3c";
-            }
-
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.style.opacity = "1";
-                feedback.textContent = "";
-            }, 2000);
+            btnSave.textContent = "⏳";
+            
+            // Оновлюємо об'єкт у масиві
+            list[index] = { ...item, name: newName, desc: newDesc, price: newPrice };
+            
+            await onSave(fullShopData);
+            
+            btnSave.textContent = "💾";
+            msg.textContent = "Збережено!";
+            msg.style.color = "#2ecc71";
+            setTimeout(() => msg.textContent = "", 2000);
         };
 
-        col.appendChild(card);
+        cardsContainer.appendChild(card);
     });
+
+    // 2. КНОПКА "ДОДАТИ НОВИЙ"
+    if (list.length < 10) {
+        const addBtn = document.createElement("button");
+        addBtn.innerText = "➕ Додати нагороду";
+        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s;`;
+        
+        addBtn.onmouseover = () => addBtn.style.background = "rgba(255,255,255,0.05)";
+        addBtn.onmouseout = () => addBtn.style.background = "transparent";
+        
+        addBtn.onclick = async () => {
+            // Створюємо новий шаблон товару
+            // Генеруємо унікальний ID, використовуючи час + випадкове число
+            const newId = categoryKey + "_" + Date.now(); 
+            
+            const newItem = {
+                id: newId,
+                name: "Нова нагорода",
+                desc: "Опис нагороди",
+                price: 100
+            };
+
+            list.push(newItem); // Додаємо в кінець масиву
+            
+            addBtn.innerText = "⏳ Додавання...";
+            await onSave(fullShopData); // Зберігаємо
+            onRefresh(); // Перемальовуємо, щоб з'явилась нова картка
+        };
+
+        col.appendChild(addBtn);
+    } else {
+        // Якщо ліміт досягнуто
+        const limitMsg = document.createElement("div");
+        limitMsg.innerText = "Максимум 10 нагород досягнуто";
+        limitMsg.style.cssText = "text-align: center; color: #555; font-size: 0.9em; padding: 10px; border: 1px dashed #444; border-radius: 8px;";
+        col.appendChild(limitMsg);
+    }
 
     parent.appendChild(col);
 }
