@@ -24,16 +24,6 @@
       </div>
     </div>
     <script>
-      // --- 🔥 FIX: Оголошуємо функції комунікації ГЛОБАЛЬНО і ОДРАЗУ ---
-      // Це гарантує, що Unity знайде цю функцію в будь-який момент часу
-      window.RequestConfigFromJS = function() {
-          console.log("📞 Unity викликала RequestConfigFromJS! Передаю батькам...");
-          if (window.parent) {
-              window.parent.postMessage("RequestConfigFromJS", "*");
-          }
-      };
-      // ------------------------------------------------------------------
-
       var canvas = document.querySelector("#unity-canvas");
 
       function unityShowBanner(msg, type) {
@@ -58,6 +48,7 @@
       var buildUrl = "Build";
       var loaderUrl = buildUrl + "/MathMaze.loader.js";
       var config = {
+        arguments: [],
         dataUrl: buildUrl + "/MathMaze.data",
         frameworkUrl: buildUrl + "/MathMaze.framework.js",
         codeUrl: buildUrl + "/MathMaze.wasm",
@@ -87,33 +78,62 @@
       script.onload = () => {
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-        }).then((unityInstance) => {
-          
-          window.unityInstance = unityInstance;
-          document.querySelector("#unity-loading-bar").style.display = "none";
-          document.querySelector("#unity-fullscreen-button").onclick = () => {
-            unityInstance.SetFullscreen(1);
-          };
+              }).then((unityInstance) => {
+                
+                // 1. Зберігаємо Unity в глобальну змінну
+                window.unityInstance = unityInstance;
 
-          // 1. Повідомляємо сайт, що Unity завантажилась
-          console.log("🟢 Unity Loaded. Sending UNITY_READY...");
-          window.parent.postMessage("UNITY_READY", "*");
+                document.querySelector("#unity-loading-bar").style.display = "none";
+                document.querySelector("#unity-fullscreen-button").onclick = () => {
+                  unityInstance.SetFullscreen(1);
+                };
+              }).catch((message) => {
+                alert(message);
+              });
+            };
 
-          // 2. Слухаємо команди від сайту (SET_CONFIG)
-          window.addEventListener("message", (event) => {
-             if (event.data && event.data.type === "SET_CONFIG") {
-                // Тільки логуємо один раз, щоб не засмічувати консоль, якщо буде спам
-                // console.log("📥 Отримано конфіг..."); 
-                unityInstance.SendMessage('GameManager', 'SetLevelConfig', event.data.payload);
-             }
-          });
-
-        }).catch((message) => {
-          alert(message);
-        });
-      };
-      
       document.body.appendChild(script);
+    </script>
+
+    <script>
+        // Цей скрипт працює як "перекладач" між грою та сайтом
+        window.addEventListener('message', function(event) {
+            
+            // --- ТУДИ (Unity -> Сайт) ---
+
+            // 1. Unity просить конфіг. Передаємо це батьківському сайту.
+            if (event.data && event.data.type === "REQUEST_CONFIG") {
+                console.log("🔗 Iframe: Unity просить конфіг. Передаю наверх...");
+                window.parent.postMessage(event.data, "*"); 
+            }
+
+            // 2. Unity хоче закритись.
+            if (event.data && event.data.type === "CLOSE_GAME") {
+                console.log("🔗 Iframe: Unity виходить. Передаю наверх...");
+                window.parent.postMessage(event.data, "*");
+            }
+
+            // 3. Unity пройшла рівень (рядок LEVEL_COMPLETE|...)
+            if (typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE")) {
+                 console.log("🔗 Iframe: Перемога! Передаю результат наверх...");
+                 window.parent.postMessage(event.data, "*");
+            }
+
+            // --- НАЗАД (Сайт -> Unity) ---
+
+            // 4. Сайт надіслав конфіг. Передаємо його всередину гри.
+            if (event.data && event.data.type === "SET_CONFIG") {
+                console.log("📥 Iframe: Отримав дані від сайту. Вставляю в гру...");
+                
+                var jsonString = event.data.payload;
+                
+                if (window.unityInstance) {
+                    window.unityInstance.SendMessage("GameManager", "SetLevelConfig", jsonString);
+                } else {
+                    console.error("❌ Iframe: Unity ще не завантажилась!");
+                }
+            }
+        });
     </script>
   </body>
 </html>
