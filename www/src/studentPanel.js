@@ -3,9 +3,10 @@
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemInList } from "./shopData.js";
 import { db } from "./firebase.js"; 
-// 👇 1. ДОДАНО ВІДСУТНІЙ ІМПОРТ
 import { sendConfigToUnity } from "./gameBridge.js";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+let leaderboardUnsubscribe = null;
 
 // ==========================================
 // 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
@@ -17,7 +18,6 @@ const AVAILABLE_AVATARS = [
 ];
 
 let cachedShopItems = null;
-
 
 // ==========================================
 // 🎮 ЛОГІКА UNITY (ЗАПУСК ТА ЗАКРИТТЯ)
@@ -51,8 +51,7 @@ function setupUnityUI() {
                 let iframe = unityContainer.querySelector("iframe");
                 if (!iframe) {
                     iframe = document.createElement("iframe");
-                    const currentLevel = user.profile?.progress?.maxLevel || 1;
-                    // 👇 URL тепер чистіший, бо параметри підуть через міст (хоча level можна залишити)
+                    // 👇 URL тепер чистіший
                     iframe.src = `unity/index.html?v=${Date.now()}`;
                     iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
 
@@ -70,8 +69,7 @@ function setupUnityUI() {
                     unityContainer.appendChild(iframe);
                 }
 
-                // 👇 2. ВАЖЛИВО: ЯВНО ВІДПРАВЛЯЄМО КОНФІГУРАЦІЮ
-                // Це гарантує, що гра отримає правильні параметри (складність, таймер і т.д.)
+                // 👇 ВАЖЛИВО: ЯВНО ВІДПРАВЛЯЄМО КОНФІГУРАЦІЮ
                 console.log("🚀 Запуск гри: відправка конфігурації...");
                 sendConfigToUnity("Fractions", user.teacherUid);
             }
@@ -99,9 +97,6 @@ function setupUnityUI() {
         if (typeof updateHomeDisplay === "function") updateHomeDisplay(u);
     };
 }
-// ==========================================
-// КІНЕЦЬ ЛОГІКИ UNITY
-// ==========================================
 
 // ==========================================
 // 🦁 СИСТЕМА АВАТАРІВ
@@ -202,7 +197,7 @@ function renderInventory(currentUser) {
         return;
     }
 
-    listEl.className = "treasury-grid";
+    listEl.className = "treasury-grid"; // Використовуємо той самий стиль, що і магазин
     listEl.style.display = "flex";
     listEl.innerHTML = "";
 
@@ -221,7 +216,13 @@ function renderInventory(currentUser) {
                     <div class="inv-desc">${shopItem.desc}</div>
                 </div>`;
         });
-        return `<div class="reward-column"><div class="reward-header">${title}</div><div class="dashed-line"></div><div class="inventory-column-content">${contentHtml}</div></div>`;
+        
+        // 🔥 ОНОВЛЕНО: використовуємо 'section-sub-header' замість 'reward-header'
+        return `
+            <div class="reward-column">
+                <div class="section-sub-header">${title}</div>
+                <div class="inventory-column-content">${contentHtml}</div>
+            </div>`;
     };
 
     listEl.innerHTML += createColumn("Мої Мікро-нагороди", shopDB.micro);
@@ -230,36 +231,56 @@ function renderInventory(currentUser) {
 }
 
 // ==========================================
-// 🏆 ФУНКЦІЇ ВІДОБРАЖЕННЯ (UI)
+// 🏆 ЛІДЕРБОРД (ОНОВЛЕНО ПІД НОВИЙ ДИЗАЙН)
 // ==========================================
-async function renderLeaderboard(currentUser) {
+// src/studentPanel.js
+
+function renderLeaderboard(currentUser) {
     const container = document.getElementById("view-leaderboard");
     if (!container) return;
 
+    // 1. Очистка старого підписника (якщо був)
+    if (leaderboardUnsubscribe) {
+        leaderboardUnsubscribe();
+        leaderboardUnsubscribe = null;
+    }
+
+    // 2. ВСТАВЛЯЄМО HTML (Золотий заголовок + Пуста таблиця)
     container.innerHTML = `
-        <div class="teacher-header"><h2>🏆 Рейтинг класу ${currentUser.className || ""}</h2></div>
-        <div style="background: #222; padding: 20px; border-radius: 10px; min-height: 300px;">
+        <div class="page-header-container">
+            <h2 class="page-header-title">🏆 Рейтинг Класу ${currentUser.className || ""}</h2>
+            <div class="page-header-line"></div>
+            <p class="page-header-description">Змагайтеся з однокласниками! Рейтинг оновлюється в реальному часі.</p>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 10px; min-height: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
             <table class="leaderboard-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
                 <thead>
-                    <tr style="color: #aaa; text-align: left;">
+                    <tr style="color: #ccc; text-align: left; text-transform: uppercase; font-size: 0.9em;">
                         <th style="padding: 10px 20px;">#</th>
-                        <th style="width: 50%;">Учень</th> <th style="width: 30%;">Золото</th>
+                        <th style="width: 50%;">Учень</th> 
+                        <th style="width: 30%;">Золото</th>
                     </tr>
                 </thead>
-                <tbody id="leaderboard-body"><tr><td colspan="3" style="text-align:center; color:#777;">Завантаження... ⏳</td></tr></tbody>
+                <tbody id="leaderboard-body">
+                    <tr><td colspan="3" style="text-align:center; color:#777; padding: 30px;">Завантаження рейтингу... ⏳</td></tr>
+                </tbody>
             </table>
         </div>
     `;
 
+    // 3. ВСТАВЛЯЄМО ТВІЙ КОД (Логіка наповнення таблиці)
+    // 👇👇👇 ОСЬ СЮДИ ВСТАВЛЯЄТЬСЯ ТЕ, ЩО ТИ СКИНУВ 👇👇👇
     const tbody = document.getElementById("leaderboard-body");
-    try {
-        const q = query(
-            collection(db, "users"),
-            where("role", "==", "student"),
-            where("className", "==", currentUser.className),
-            where("teacherUid", "==", currentUser.teacherUid)
-        );
-        const querySnapshot = await getDocs(q);
+
+    const q = query(
+        collection(db, "users"),
+        where("role", "==", "student"),
+        where("className", "==", currentUser.className),
+        where("teacherUid", "==", currentUser.teacherUid)
+    );
+
+    leaderboardUnsubscribe = onSnapshot(q, (querySnapshot) => {
         let classmates = [];
 
         querySnapshot.forEach((doc) => {
@@ -276,10 +297,12 @@ async function renderLeaderboard(currentUser) {
         }
 
         tbody.innerHTML = "";
+        
         classmates.forEach((student, index) => {
             const tr = document.createElement("tr");
             let rankClass = "rank-other"; 
             let rankIcon = `#${index + 1}`;
+            
             if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
             else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
             else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
@@ -287,24 +310,28 @@ async function renderLeaderboard(currentUser) {
             tr.className = rankClass;
             if (student.uid === currentUser.uid) tr.classList.add("is-current-user");
 
-            let ava = student.profile?.avatar || 'assets/img/boy.png';
+            let ava = student.profile?.avatar || 'assets/img/base.png';
             if (ava.includes('assets/avatars/')) ava = ava.replace('assets/avatars/', 'assets/img/');
 
             tr.innerHTML = `
-                <td class="rank-col" style="font-weight:bold;">${rankIcon}</td>
-                <td class="name-col" style="font-size: 1.1em; color: white; display: flex; align-items: center; gap: 10px;">
-                    <img src="${ava}" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;" onerror="this.src='assets/img/boy.png'">
+                <td class="rank-col" style="font-weight:bold; font-size: 1.2em;">${rankIcon}</td>
+                <td class="name-col" style="font-size: 1.2em; color: white; display: flex; align-items: center; gap: 15px;">
+                    <img src="${ava}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #555;" onerror="this.src='assets/img/base.png'">
                     ${student.name}
                 </td>
-                <td class="gold-col" style="color: #f1c40f; font-weight: bold;">${student.cleanGold} 💰</td>
+                <td class="gold-col" style="color: #f1c40f; font-weight: 800; font-size: 1.2em;">${student.cleanGold} 💰</td>
             `;
             tbody.appendChild(tr);
         });
-    } catch (error) {
+    }, (error) => {
+        console.error("Помилка лідерборду:", error);
         tbody.innerHTML = `<tr><td colspan="3" style="color:#e74c3c; text-align:center;">Помилка завантаження</td></tr>`;
-    }
+    });
 }
 
+// ==========================================
+// 🛠️ СИСТЕМНІ ФУНКЦІЇ
+// ==========================================
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
@@ -336,25 +363,19 @@ async function saveUserData(user) {
 
 function startLiveGoldTracker(userId) {
     console.log("📡 Запущено живий трекер золота...");
-    
     const userRef = doc(db, "users", userId);
     
-    // onSnapshot спрацьовує автоматично кожного разу, коли дані в Firebase змінюються
     onSnapshot(userRef, (docSnap) => {
         if (docSnap.exists()) {
             const freshData = docSnap.data();
-            console.log("💰 Отримано оновлення золота з бази:", freshData.profile?.gold);
-            
-            // 1. Оновлюємо локальні дані
             let user = getCurrentUser();
             user.profile = freshData.profile;
             localStorage.setItem("currentUser", JSON.stringify(user));
-            
-            // 2. Оновлюємо відображення на екрані
             updateHomeDisplay(user);
         }
     });
 }
+
 // ==========================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ
 // ==========================================

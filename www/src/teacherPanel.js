@@ -69,25 +69,42 @@ export async function renderTeacherDashboard(containerId) {
     const myDisplayId = currentUser.teacherCode || currentUser.uid;
     const { classes, totalStudents } = await getUniqueClasses(currentUser.uid);
 
-    container.innerHTML = `
-        <div class="teacher-header">
-            <h2>📚 Мої класи</h2>
-            <div style="background: #333; padding: 15px; border-radius: 8px; border: 2px solid var(--accent-gold); display: inline-block; margin-top: 10px; text-align: center;">
-                <span style="color: #aaa; font-size: 0.9em;">Ваш ID для учнів:</span><br>
-                <strong style="color: #fff; font-family: monospace; font-size: 2em; letter-spacing: 3px;">${myDisplayId}</strong>
-            </div>
-            <p style="margin-top: 10px;">Всього учнів у вашій групі: ${totalStudents}</p>
+   container.innerHTML = `
+    <div class="page-header-container">
+        <h2 class="page-header-title">📚 Мої Класи</h2>
+        <div class="page-header-line"></div>
+        <p class="page-header-description">Керуйте своїми класами та переглядайте успішність учнів.</p>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 40px;">
+        <div class="teacher-id-badge">
+            Ваш ID для учнів: <span>${myDisplayId}</span>
         </div>
-        <div id="class-cards" class="class-grid"></div>
+    </div>
+
+    <p style="text-align:center; color: #bdc3c7; font-size: 1.2em; margin-bottom: 30px;">
+        Всього учнів у вашій групі: <strong style="color: #fff;">${totalStudents}</strong>
+    </p>
+
+    <div id="class-cards" class="class-grid"></div>
+`;
+
+const grid = document.getElementById("class-cards");
+
+classes.forEach(className => {
+    const card = document.createElement("div");
+    // Додаємо клас, щоб картки теж були красивими
+    card.className = "class-card"; 
+    
+    // Внутрішній HTML картки
+    card.innerHTML = `
+        <h3>${className}</h3>
+        <p>Переглянути успішність →</p>
     `;
-    const grid = document.getElementById("class-cards");
-    classes.forEach(className => {
-        const card = document.createElement("div");
-        card.className = "class-card";
-        card.innerHTML = `<h3>${className}</h3><p>Переглянути успішність</p>`;
-        card.addEventListener('click', () => { renderClassLeaderboard(className); });
-        grid.appendChild(card);
-    });
+    
+    card.addEventListener('click', () => { renderClassLeaderboard(className); });
+    grid.appendChild(card);
+});
     if (classes.length === 0) grid.innerHTML = '<p style="text-align: center;">У вас ще немає зареєстрованих учнів.</p>';
 }
 
@@ -179,18 +196,24 @@ async function renderStudentProfile(student) {
 
     // 1. Підготовка даних (Інвентар)
     const inventory = student.profile?.inventory || [];
+    
+    // Групуємо однакові предмети: { "Назва": 5, "Інша": 1 }
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
         acc[itemName] = (acc[itemName] || 0) + 1;
         return acc;
     }, {});
 
-    const inventoryList = Object.keys(stackedInventory).length > 0
+    // Генеруємо HTML список з кнопками
+    const inventoryListHtml = Object.keys(stackedInventory).length > 0
         ? Object.keys(stackedInventory).map(name => `
-            <div style="background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; font-size: 0.9em; text-align: left; color: #ecf0f1; border-left: 4px solid #3498db;">
-                ${name} (x${stackedInventory[name]})
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
+                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${stackedInventory[name]})</b></span>
+                <button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
+                    🗑️ Списати
+                </button>
             </div>`).join('')
-        : '<p style="opacity: 0.5; font-style: italic; padding: 20px;">Нагороди ще не придбані</p>';
+        : '<p style="opacity: 0.5; font-style: italic; padding: 20px; text-align: center;">Нагороди ще не придбані</p>';
         
     const goldDisplay = student.profile?.gold || 0; 
 
@@ -234,15 +257,18 @@ async function renderStudentProfile(student) {
                     <h3 style="color: #3498db; border-top: 1px solid #333; padding-top: 25px; margin-top: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <span>🎁</span> Інвентар
                     </h3>
-                    <div id="inventory-container" style="max-height: 250px; overflow-y: auto;">${inventoryList}</div>
+                    <div id="inventory-container" style="max-height: 250px; overflow-y: auto;">
+                        ${inventoryListHtml}
+                    </div>
                 </div>
             </div>
         </div>
     `;
 
     // 3. ЛОГІКА КНОПОК
+
+    // Кнопка "Назад"
     document.getElementById("btn-back-to-list").onclick = () => {
-        const teacher = getCurrentUser();
         if (student.className && typeof renderClassLeaderboard === 'function') {
             renderClassLeaderboard(student.className);
         } else {
@@ -250,7 +276,7 @@ async function renderStudentProfile(student) {
         }
     };
 
-    // ОНОВЛЕННЯ ЗОЛОТА
+    // Кнопка "Оновити золото"
     document.getElementById("btn-save-gold").onclick = async () => {
         const input = document.getElementById("gold-input");
         const newVal = parseInt(input.value);
@@ -265,15 +291,70 @@ async function renderStudentProfile(student) {
             await updateDoc(studentRef, { "profile.gold": newVal });
             alert("✅ Баланс золота успішно змінено!");
             
-            const updatedStudent = { ...student };
-            if (!updatedStudent.profile) updatedStudent.profile = {};
-            updatedStudent.profile.gold = newVal;
-            renderStudentProfile(updatedStudent);
+            // Оновлюємо локальний об'єкт і перемальовуємо
+            student.profile.gold = newVal;
+            renderStudentProfile(student);
         } catch (e) {
             console.error("Firebase Update Error:", e);
-            alert("❌ Помилка: не вдалося оновити базу даних.");
+            alert("❌ Помилка оновлення.");
         }
     };
+
+    // 🔥 ЛОГІКА СПИСАННЯ НАГОРОД (Нове)
+    // Знаходимо всі кнопки видалення, які ми щойно намалювали
+    container.querySelectorAll('.btn-delete-reward').forEach(btn => {
+        btn.onclick = async () => {
+            const itemName = btn.dataset.name;
+            const success = await removeStudentItem(student.uid, itemName);
+            
+            if (success) {
+                // Оновлюємо локальний об'єкт інвентаря, щоб екран оновився миттєво
+                const idx = student.profile.inventory.findIndex(i => i.name === itemName);
+                if (idx !== -1) {
+                    student.profile.inventory.splice(idx, 1);
+                    renderStudentProfile(student); // Перемальовуємо профіль
+                }
+            }
+        };
+    });
+}
+
+
+// Функція для фізичного видалення предмету з бази даних
+async function removeStudentItem(studentId, itemName) {
+    if (!confirm(`Ви впевнені, що хочете списати (видалити) "${itemName}"?`)) return false;
+
+    try {
+        const studentRef = doc(db, "users", studentId);
+        const snapshot = await getDoc(studentRef);
+        
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            let inventory = data.profile.inventory || [];
+
+            // Шукаємо індекс першого предмета з такою назвою
+            const indexToRemove = inventory.findIndex(item => item.name === itemName);
+
+            if (indexToRemove !== -1) {
+                // Видаляємо 1 елемент за знайденим індексом
+                inventory.splice(indexToRemove, 1);
+
+                // Оновлюємо базу
+                await updateDoc(studentRef, {
+                    "profile.inventory": inventory
+                });
+                
+                return true; // Успіх
+            } else {
+                alert("Помилка: Цей предмет вже відсутній у базі.");
+                return false;
+            }
+        }
+    } catch (e) {
+        console.error("Error removing item:", e);
+        alert("Помилка списання: " + e.message);
+        return false;
+    }
 }
 
 // ==========================================
@@ -283,10 +364,12 @@ async function renderLevelEditor() {
     const container = document.getElementById("view-tasks"); 
     if (!container) return;
 
+    // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
     container.innerHTML = `
-        <div class="teacher-header" style="text-align:center;">
-            <h2>📝 Конструктор Рівнів</h2>
-            <p>Налаштуйте завдання, час та нагороду для кожного рівня.</p>
+        <div class="page-header-container">
+            <h2 class="page-header-title">📝 Конструктор Рівнів</h2>
+            <div class="page-header-line"></div>
+            <p class="page-header-description">Налаштуйте завдання, час та нагороду для кожного рівня.</p>
         </div>
 
         <div style="max-width: 800px; margin: 0 auto; background: #222; padding: 20px; border-radius: 10px; border: 1px solid #444;">
@@ -442,124 +525,399 @@ async function renderTreasureEditor() {
     const container = document.getElementById("treasury-content");
     if (!container) return;
 
-    container.innerHTML = `
-        <div class="teacher-header" style="text-align: center; margin-bottom: 30px;">
-            <h2 style="color: var(--accent-gold); font-size: 2em; margin-bottom: 10px;">💎 Редактор Скарбниці</h2>
-            <p style="color: #aaa;">Налаштуйте товари, які зможуть купувати ваші учні.</p>
-        </div>
-        <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-            <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
-        </div>
-    `;
-
     const user = getCurrentUser();
     if (!user) return;
 
-    try {
-        // Завантажуємо дані САМЕ ЦЬОГО вчителя (або стандартні, якщо пусто)
-        const shopData = await getShopItems(user.uid);
-        
-        const grid = document.getElementById("treasury-grid-editor");
-        grid.innerHTML = ""; // Очистити лоадер
+    // Функція для повного оновлення екрану
+    const refreshEditor = async () => {
+        // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
+        container.innerHTML = `
+            <div class="page-header-container">
+                <h2 class="page-header-title">💎 Редактор Скарбниці</h2>
+                <div class="page-header-line"></div>
+                <p class="page-header-description">Додавайте та видаляйте нагороди (макс. 10 у категорії).</p>
+            </div>
 
-        // Функція збереження, яка оновлює загальний об'єкт і відправляє в базу
-        const handleSave = async (updatedData) => {
-            await saveShopItems(user.uid, updatedData);
-        };
+            <div id="treasury-grid-editor" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; align-items: flex-start;">
+                <div style="color: #777; width: 100%; text-align: center;">⏳ Завантаження магазину...</div>
+            </div>
+        `;
 
-        // Рендер трьох колонок
-        renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71");
-        renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db");
-        renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6");
+        try {
+            const shopData = await getShopItems(user.uid);
+            const grid = document.getElementById("treasury-grid-editor");
+            grid.innerHTML = ""; 
 
-    } catch (e) { 
-        console.error("Error loading shop:", e);
-        container.innerHTML += `<p style="color:red; text-align:center;">Помилка завантаження: ${e.message}</p>`;
-    }
+            // Функція збереження в базу
+            const handleSave = async (updatedData) => {
+                await saveShopItems(user.uid, updatedData);
+            };
+
+            // Рендер колонок
+            renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71", refreshEditor);
+            renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db", refreshEditor);
+            renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6", refreshEditor);
+
+        } catch (e) {
+            console.error("Error loading shop:", e);
+            container.innerHTML += `<p style="color:red; text-align:center;">Помилка: ${e.message}</p>`;
+        }
+    };
+
+    // Запускаємо перший раз
+    refreshEditor();
 }
 
 // Допоміжна функція для рендеру колонки редагування
-function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color) {
+function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color, onRefresh) {
     const col = document.createElement("div");
-    col.style.cssText = "flex: 1; min-width: 300px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
+    col.style.cssText = "flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
     
-    col.innerHTML = `<h3 style="color: ${color}; margin-bottom: 15px; text-align: center;">${title}</h3>`;
-    
-    const list = fullShopData[categoryKey] || [];
+    // Переконуємось, що масив існує
+    if (!fullShopData[categoryKey]) fullShopData[categoryKey] = [];
+    const list = fullShopData[categoryKey];
 
+    // Заголовок з лічильником
+    col.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+            <h3 style="color: ${color}; margin:0;">${title}</h3>
+            <span style="font-size: 0.8em; color: #777;">${list.length}/10</span>
+        </div>
+    `;
+    
+    // Контейнер для карток
+    const cardsContainer = document.createElement("div");
+    col.appendChild(cardsContainer);
+
+    // 1. РЕНДЕР ІСНУЮЧИХ ТОВАРІВ
     list.forEach((item, index) => {
         const card = document.createElement("div");
-        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333;";
+        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; position: relative;";
         
         card.innerHTML = `
             <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Назва товару:</label>
-                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 8px; background: #111; color: white; border: 1px solid #444; border-radius: 5px;">
+                <label style="font-size: 0.75em; color: #777;">Назва:</label>
+                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 6px; background: #111; color: white; border: 1px solid #444; border-radius: 4px;">
             </div>
             
             <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.8em; color: #777; display: block; margin-bottom: 2px;">Опис:</label>
-                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 8px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 5px;">
+                <label style="font-size: 0.75em; color: #777;">Опис:</label>
+                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 6px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px;">
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                <div style="width: 45%;">
-                    <label style="font-size: 0.8em; color: #f1c40f; display: block; margin-bottom: 2px;">Ціна (💰):</label>
-                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 8px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 5px; font-weight: bold;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 10px;">
+                <div style="flex-grow: 1;">
+                    <label style="font-size: 0.75em; color: #f1c40f;">Ціна:</label>
+                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
                 </div>
-                <button class="btn-save-item" style="width: 45%; padding: 8px; background: ${color}; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    💾 Зберегти
-                </button>
+                
+                <button class="btn-save" style="padding: 6px 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">💾</button>
+                
+                <button class="btn-delete" style="padding: 6px 12px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">🗑️</button>
             </div>
-            <div class="save-feedback" style="text-align: center; font-size: 0.8em; margin-top: 5px; height: 1.2em;"></div>
+            <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
         `;
 
-        const btn = card.querySelector(".btn-save-item");
-        const feedback = card.querySelector(".save-feedback");
+        // Логіка видалення
+        card.querySelector(".btn-delete").onclick = async () => {
+            if (confirm(`Видалити "${item.name}"?`)) {
+                list.splice(index, 1); // Видаляємо з масиву
+                await onSave(fullShopData); // Зберігаємо в БД
+                onRefresh(); // Перемальовуємо екран
+            }
+        };
 
-        btn.onclick = async () => {
-            // 1. Збираємо дані з полів
+        // Логіка локального збереження (редагування)
+        const btnSave = card.querySelector(".btn-save");
+        btnSave.onclick = async () => {
             const newName = card.querySelector(".inp-name").value;
             const newDesc = card.querySelector(".inp-desc").value;
             const newPrice = parseInt(card.querySelector(".inp-price").value);
+            const msg = card.querySelector(".feedback-msg");
 
-            if (!newName || isNaN(newPrice)) {
-                alert("Назва і ціна обов'язкові!");
-                return;
-            }
+            if (!newName || isNaN(newPrice)) return alert("Заповніть назву та ціну!");
 
-            btn.disabled = true;
-            btn.style.opacity = "0.5";
-            feedback.textContent = "Збереження...";
-
-            // 2. Оновлюємо локальний об'єкт даних
-            fullShopData[categoryKey][index] = {
-                id: item.id, // ID не змінюємо
-                name: newName,
-                desc: newDesc,
-                price: newPrice
-            };
-
-            // 3. Відправляємо весь об'єкт на збереження
-            const success = await onSave(fullShopData);
-
-            if (success) {
-                feedback.textContent = "✅ Зміни збережено!";
-                feedback.style.color = "#2ecc71";
-            } else {
-                feedback.textContent = "❌ Помилка!";
-                feedback.style.color = "#e74c3c";
-            }
-
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.style.opacity = "1";
-                feedback.textContent = "";
-            }, 2000);
+            btnSave.textContent = "⏳";
+            
+            // Оновлюємо об'єкт у масиві
+            list[index] = { ...item, name: newName, desc: newDesc, price: newPrice };
+            
+            await onSave(fullShopData);
+            
+            btnSave.textContent = "💾";
+            msg.textContent = "Збережено!";
+            msg.style.color = "#2ecc71";
+            setTimeout(() => msg.textContent = "", 2000);
         };
 
-        col.appendChild(card);
+        cardsContainer.appendChild(card);
     });
 
+    // 2. КНОПКА "ДОДАТИ НОВИЙ"
+    if (list.length < 10) {
+        const addBtn = document.createElement("button");
+        addBtn.innerText = "➕ Додати нагороду";
+        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s;`;
+        
+        addBtn.onmouseover = () => addBtn.style.background = "rgba(255,255,255,0.05)";
+        addBtn.onmouseout = () => addBtn.style.background = "transparent";
+        
+        addBtn.onclick = async () => {
+            // Створюємо новий шаблон товару
+            // Генеруємо унікальний ID, використовуючи час + випадкове число
+            const newId = categoryKey + "_" + Date.now(); 
+            
+            const newItem = {
+                id: newId,
+                name: "Нова нагорода",
+                desc: "Опис нагороди",
+                price: 100
+            };
+
+            list.push(newItem); // Додаємо в кінець масиву
+            
+            addBtn.innerText = "⏳ Додавання...";
+            await onSave(fullShopData); // Зберігаємо
+            onRefresh(); // Перемальовуємо, щоб з'явилась нова картка
+        };
+
+        col.appendChild(addBtn);
+    } else {
+        // Якщо ліміт досягнуто
+        const limitMsg = document.createElement("div");
+        limitMsg.innerText = "Максимум 10 нагород досягнуто";
+        limitMsg.style.cssText = "text-align: center; color: #555; font-size: 0.9em; padding: 10px; border: 1px dashed #444; border-radius: 8px;";
+        col.appendChild(limitMsg);
+    }
+
     parent.appendChild(col);
+}
+
+/// ==========================================
+// 📊 АНАЛІТИКА ТА ЖУРНАЛ (ФІНАЛЬНА ВЕРСІЯ)
+// ==========================================
+
+// Змінні стану
+let cachedStudentsForAnalytics = []; 
+let expandedStudentId = null; // ID учня, який зараз відкритий
+
+export async function renderAnalyticsPanel(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // 1. Малюємо каркас
+    container.innerHTML = `
+        <div class="teacher-header">
+            <h2>📊 Аналітика Класу</h2>
+        </div>
+        <div id="analytics-table-container">⏳ Завантаження списку учнів...</div>
+        <div id="student-journal-details" style="margin-top: 20px;"></div>
+    `;
+
+    const teacher = getCurrentUser();
+    if (!teacher) return;
+
+    try {
+        // 2. Завантажуємо учнів
+        const q = query(
+            collection(db, "users"),
+            where("role", "==", "student"),
+            where("teacherUid", "==", teacher.uid)
+        );
+
+        const querySnapshot = await getDocs(q);
+        cachedStudentsForAnalytics = [];
+        querySnapshot.forEach((doc) => {
+            cachedStudentsForAnalytics.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Сортування: Клас -> Ім'я
+        cachedStudentsForAnalytics.sort((a, b) => {
+            const classCompare = (a.className || "").localeCompare(b.className || "");
+            if (classCompare !== 0) return classCompare;
+            return (a.name || "").localeCompare(b.name || "");
+        });
+
+        // 3. Рендеримо таблицю
+        renderAnalyticsTable();
+
+    } catch (error) {
+        console.error("Помилка:", error);
+        container.innerHTML += `<p style="color:red">Помилка завантаження: ${error.message}</p>`;
+    }
+}
+
+function renderAnalyticsTable() {
+    const tableContainer = document.getElementById("analytics-table-container");
+    const detailsContainer = document.getElementById("student-journal-details");
+    
+    if (!tableContainer) return;
+
+    // Якщо список порожній
+    if (cachedStudentsForAnalytics.length === 0) {
+        tableContainer.innerHTML = `<p style="text-align:center; color:#777;">Учнів не знайдено.</p>`;
+        return;
+    }
+
+    // 🔥 ФІЛЬТРАЦІЯ: Якщо обрано учня, показуємо тільки його рядок
+    const studentsToShow = expandedStudentId 
+        ? cachedStudentsForAnalytics.filter(s => s.id === expandedStudentId) 
+        : cachedStudentsForAnalytics;
+
+    let html = `
+        <table class="analytics-table" style="width: 100%; border-collapse: collapse; background: #222; border-radius: 8px; margin-top: 10px;">
+            <thead>
+                <tr style="background: #333; color: #ecf0f1;">
+                    <th style="padding: 12px; text-align: left;">Учень</th>
+                    <th style="padding: 12px;">Клас</th>
+                    <th style="padding: 12px;">Золото</th>
+                    <th style="padding: 12px; text-align: center;">Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    studentsToShow.forEach(student => {
+        const isExpanded = (student.id === expandedStudentId);
+        const btnText = isExpanded ? "✖ Закрити" : "📜 Журнал";
+        const btnColor = isExpanded ? "#e74c3c" : "#f1c40f"; // Червоний або Жовтий
+        const btnTextColor = isExpanded ? "white" : "black";
+
+        html += `
+            <tr style="border-bottom: 1px solid #444;">
+                <td style="padding: 12px; font-weight: bold; color: white;">${student.name}</td>
+                <td style="padding: 12px; text-align:center; color: #ccc;">${student.className || "-"}</td>
+                <td style="padding: 12px; text-align:center; color: #f1c40f;">${student.profile?.gold || 0} 💰</td>
+                <td style="padding: 12px; text-align: center;">
+                    <button class="btn-toggle-journal" 
+                        data-id="${student.id}"
+                        style="background: ${btnColor}; color: ${btnTextColor}; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                        ${btnText}
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table>`;
+    
+    // Якщо учня розгорнуто, додаємо кнопку "Показати всіх" (для ясності)
+    if (expandedStudentId) {
+        html += `<div style="text-align:right; margin-top:5px; font-size:0.8em; color:#777;">Відображається обраний учень</div>`;
+    }
+
+    tableContainer.innerHTML = html;
+
+    // === ДОДАЄМО ОБРОБНИКИ ПОДІЙ ===
+    document.querySelectorAll('.btn-toggle-journal').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const studentId = e.target.getAttribute('data-id');
+            handleJournalToggle(studentId);
+        });
+    });
+
+    // === ЯКЩО УЧЕНЬ ОБРАНИЙ, ЗАВАНТАЖУЄМО ЙОГО ДАНІ ===
+    if (expandedStudentId && detailsContainer) {
+        // Очищаємо контейнер перед завантаженням (щоб не було дублів)
+        detailsContainer.innerHTML = ""; 
+        renderStudentJournal(expandedStudentId); // <--- ГОЛОВНИЙ ВИКЛИК
+    } else if (detailsContainer) {
+        detailsContainer.innerHTML = ""; // Очистити, якщо закрито
+    }
+}
+
+// Функція перемикання стану
+function handleJournalToggle(studentId) {
+    if (expandedStudentId === studentId) {
+        expandedStudentId = null; // Закрити
+    } else {
+        expandedStudentId = studentId; // Відкрити
+    }
+    renderAnalyticsTable(); // Перемалювати
+}
+
+// ==========================================
+// 📜 ДЕТАЛЬНИЙ ЖУРНАЛ УЧНЯ (ЄДИНА ВЕРСІЯ)
+// ==========================================
+async function renderStudentJournal(studentId) {
+    const detailsContainer = document.getElementById("student-journal-details");
+    if (!detailsContainer) return;
+
+    detailsContainer.innerHTML = `
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #444; animation: slideDown 0.3s ease-out;">
+            <h3 style="color: #3498db; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                📜 Історія проходження
+            </h3>
+            <div id="journal-loader" style="color: #aaa;">⏳ Завантаження даних сесій...</div>
+            <div id="journal-list"></div>
+        </div>
+    `;
+
+    try {
+        // Запит до під-колекції 'game_sessions' конкретного учня
+        const sessionsRef = collection(db, "users", studentId, "game_sessions");
+        // Сортуємо за часом (спочатку нові)
+        const q = query(sessionsRef, orderBy("timestamp", "desc"));
+        
+        const snapshot = await getDocs(q);
+        const listContainer = document.getElementById("journal-list");
+        
+        // Перевіряємо, чи елемент все ще існує (на випадок швидкого закриття)
+        const loader = document.getElementById("journal-loader");
+        if (loader) loader.style.display = 'none';
+
+        if (snapshot.empty) {
+            listContainer.innerHTML = `<p style="color: #777; font-style: italic;">Учень ще не проходив жодного рівня.</p>`;
+            return;
+        }
+
+        let tableHtml = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="color: #888; text-align: left;">
+                        <th style="padding: 8px;">Дата</th>
+                        <th style="padding: 8px;">Тема / Рівень</th>
+                        <th style="padding: 8px;">Результат</th>
+                        <th style="padding: 8px;">Час</th>
+                        <th style="padding: 8px;">Помилки</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const dateObj = data.timestamp ? data.timestamp.toDate() : new Date();
+            const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            // Стилізація результату
+            const isWin = data.status === 'win';
+            const statusStyle = isWin 
+                ? 'color: #2ecc71; font-weight: bold;' 
+                : 'color: #e74c3c; font-weight: bold;';
+            const statusText = isWin ? '✅ ПЕРЕМОГА' : '❌ ПОРАЗКА';
+
+            tableHtml += `
+                <tr style="border-bottom: 1px solid #333;">
+                    <td style="padding: 8px; color: #ccc;">${dateStr}</td>
+                    <td style="padding: 8px; color: white;">
+                        <span style="color: #3498db;">${data.topic || 'Unknown'}</span> 
+                        <span style="color: #777;">(D${data.levelId || '?'})</span>
+                    </td>
+                    <td style="padding: 8px; ${statusStyle}">${statusText}</td>
+                    <td style="padding: 8px; color: #f1c40f;">${data.timeSpent || 0} сек</td>
+                    <td style="padding: 8px; color: #e74c3c;">${data.mistakes || 0}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `</tbody></table>`;
+        listContainer.innerHTML = tableHtml;
+
+    } catch (error) {
+        console.error("Error loading journal:", error);
+        if(detailsContainer) {
+            detailsContainer.innerHTML += `<p style="color: red;">Помилка завантаження історії: ${error.message}</p>`;
+        }
+    }
 }
