@@ -1210,3 +1210,99 @@ input::-webkit-inner-spin-button {
     line-height: 1.5;
     opacity: 0.9;
 }
+
+/* --- СТИЛІ АНАЛІТИКИ --- */
+
+/* Панель вибору класу */
+.analytics-controls-bar {
+    max-width: 800px;
+    margin: 0 auto 20px auto;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 15px 25px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.analytics-controls-bar label {
+    color: #f1c40f;
+    font-weight: bold;
+    margin-right: 15px;
+    font-size: 1.1em;
+}
+
+.analytics-controls-bar select {
+    padding: 8px 12px;
+    border-radius: 5px;
+    background: #2c3e50;
+    color: white;
+    border: 1px solid #f1c40f;
+    font-size: 1em;
+    cursor: pointer;
+    outline: none;
+}
+
+/* Кнопки в таблиці */
+.btn-action {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.9em;
+    text-transform: uppercase;
+}
+
+/* Синя кнопка "Журнал" */
+.btn-journal-open {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    box-shadow: 0 4px 0 #1a5276;
+}
+.btn-journal-open:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #1a5276;
+}
+
+/* Червона кнопка "Закрити" */
+.btn-journal-close {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    box-shadow: 0 4px 0 #922b21;
+}
+.btn-journal-close:hover {
+    background: linear-gradient(135deg, #ff6b6b, #ee5253);
+}
+
+/* Панель журналу (деталі) */
+.journal-panel {
+    max-width: 800px;
+    margin: 20px auto;
+    background: #1a1a2e;
+    border: 2px solid #f1c40f;
+    border-radius: 15px;
+    padding: 20px;
+    animation: slideDown 0.4s ease-out;
+}
+
+.journal-header {
+    color: #f1c40f;
+    text-align: center;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(241, 196, 15, 0.3);
+    padding-bottom: 10px;
+}
+
+/* Статуси проходження */
+.status-done { color: #2ecc71; font-weight: bold; } /* Успіх */
+.status-fail { color: #e74c3c; font-weight: bold; } /* Провал/Вихід */
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Утиліта для приховування */
+.hidden { display: none !important; }

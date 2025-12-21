@@ -300,15 +300,60 @@
     </div>
 
     <div id="view-analytics" class="panel-view hidden">
-        
-        <div class="page-header-container">
-            <h2 class="page-header-title">📊 Аналітика</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Детальна статистика успішності ваших учнів та класів.</p>
-        </div>
-
-        <div id="analytics-content"></div>
+    
+    <div class="page-header-container">
+        <h2 class="page-header-title">📊 Аналітика</h2>
+        <div class="page-header-line"></div>
+        <p class="page-header-description">Оберіть клас, щоб переглянути успішність учнів та детальний журнал.</p>
     </div>
+
+    <div class="analytics-controls-bar">
+        <label for="analytics-class-filter">Клас:</label>
+       <select id="class-filter-select">
+            <option value="" disabled selected>-- Оберіть клас --</option>
+            <option value="8-A">8-A</option>
+            <option value="8-Б">8-Б</option>
+            <option value="8-B">8-В</option>
+        </select>
+    </div>
+
+    <div class="leaderboard-wrapper">
+        <table class="leaderboard-table" id="analytics-main-table">
+            <thead>
+                <tr>
+                    <th>Учень</th>
+                    <th>Клас</th>
+                    <th>Логін (ID)</th>
+                    <th class="gold-col">Загальне Золото 💰</th>
+                    <th style="text-align: center;">Дії</th>
+                </tr>
+            </thead>
+            <tbody id="analytics-tbody">
+                </tbody>
+        </table>
+    </div>
+
+    <div id="student-journal-panel" class="journal-panel hidden">
+        <h3 id="journal-student-name" class="journal-header">Історія: Учень</h3>
+        
+        <table class="leaderboard-table journal-history-table">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Рівень</th>
+                    <th>Статус</th>
+                    <th>Помилки</th>
+                    <th>Час</th>
+                    <th>Золото</th>
+                    <th>Оцінка</th>
+                </tr>
+            </thead>
+            <tbody id="journal-history-tbody">
+                </tbody>
+        </table>
+    </div>
+
+</div>
 </main>
     </section>
 
