@@ -1,83 +1,102 @@
 // src/gameBridge.js
-import { db } from "./firebase.js";
-import { collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { db } from "./firebase.js"; // Перевір, що шлях правильний
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-let cachedConfig = null; // Зберігаємо конфіг, щоб відправляти повторно
+let cachedConfig = null;
 
 // ==========================================
-// 1. ОТРИМАННЯ ДАНИХ З FIREBASE І ВІДПРАВКА
+// 1. ОТРИМАННЯ ДАНИХ (Вчитель -> Глобальні -> Запасні)
 // ==========================================
 export async function sendConfigToUnity(topicId, teacherId) {
-    console.log(`📥 Завантаження завдань з Firebase: Teacher=${teacherId}, Topic=${topicId}`);
+    console.log(`📥 Завантаження рівня: Teacher=${teacherId}, Topic=${topicId}`);
 
-    let doorsData = [];
-    let reward = 100;
-    let timeLimit = 120;
+    let gameConfig = null;
 
-    try {
-        // УВАГА: Тут має бути шлях до вашої колекції завдань.
-        // Приклад: users -> {teacherId} -> topics -> {topicId} -> levels
-        const q = query(
-            collection(db, "users", teacherId, "topics", topicId, "levels"),
-            orderBy("levelNumber") // Сортуємо по порядку (якщо є поле levelNumber)
-        );
+    // ---------------------------------------------------------
+    // ЕТАП 1: Шукаємо особистий конфіг вчителя
+    // ---------------------------------------------------------
+    if (teacherId) {
+        try {
+            // Шукаємо документ, де ID = UID вчителя
+            const teacherRef = doc(db, "teacher_configs", teacherId);
+            const snapshot = await getDoc(teacherRef);
 
-        const querySnapshot = await getDocs(q);
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                console.log(`📂 У вчителя знайдено теми:`, Object.keys(data)); // 👈 ДУЖЕ КОРИСНИЙ ЛОГ
 
-        if (!querySnapshot.empty) {
-            querySnapshot.forEach((doc) => {
-                const data = doc.data();
-                doorsData.push({
-                    id: Number(data.levelNumber) || Number(doc.id) || 0, // ID рівня (int)
-                    question: data.question || "Питання?",
-                    answer: data.correctAnswer || "0",
-                    wrongAnswers: data.wrongAnswers || ["1", "2", "3"]
-                });
-            });
-            console.log(`✅ Знайдено ${doorsData.length} рівнів.`);
-        } else {
-            console.warn("⚠️ Завдань у базі немає. Використовую резервні дані.");
-            doorsData = [
-                { id: 1, question: "Тест 2+2", answer: "4", wrongAnswers: ["1", "5", "0"] },
-                { id: 2, question: "Тест 5*5", answer: "25", wrongAnswers: ["20", "30", "15"] }
-            ];
+                // Перевіряємо точний збіг (Fractions == Fractions)
+                if (data[topicId]) {
+                    console.log(`✅ Знайдено персональний рівень вчителя для "${topicId}"!`);
+                    gameConfig = data[topicId];
+                } else {
+                    console.warn(`⚠️ Вчитель існує, але теми "${topicId}" немає. Доступні: ${Object.keys(data).join(", ")}`);
+                }
+            } else {
+                console.warn(`⚠️ Документ вчителя (ID: ${teacherId}) не знайдено в teacher_configs.`);
+            }
+        } catch (e) {
+            console.error("❌ Помилка читання вчителя:", e);
         }
-
-    } catch (error) {
-        console.error("❌ Помилка Firebase:", error);
     }
 
-    // Формуємо об'єкт для Unity
-    const gameConfig = {
-        reward: reward,
-        timeLimit: timeLimit,
-        doors: doorsData
-    };
+    // ---------------------------------------------------------
+    // ЕТАП 2: Якщо у вчителя пусто -> ГЛОБАЛЬНИЙ КОНФІГ
+    // ---------------------------------------------------------
+    if (!gameConfig) {
+        console.log("🔄 Перемикаємось на пошук глобального шаблону...");
+        try {
+            const globalRef = doc(db, "global_config", "game_levels");
+            const globalSnap = await getDoc(globalRef);
 
-    // Кешуємо конфіг
+            if (globalSnap.exists()) {
+                const gData = globalSnap.data();
+                if (gData[topicId]) {
+                    console.log("✅ Завантажено ГЛОБАЛЬНИЙ рівень.");
+                    gameConfig = gData[topicId];
+                } else {
+                    console.warn(`⚠️ Глобальний рівень для "${topicId}" теж відсутній.`);
+                }
+            }
+        } catch (e) {
+            console.error("❌ Помилка глобального конфігу:", e);
+        }
+    }
+
+    // ---------------------------------------------------------
+    // ЕТАП 3: Якщо все пропало -> Хардкод (FALLBACK)
+    // ---------------------------------------------------------
+    if (!gameConfig) {
+        console.warn("⚠️ База пуста або помилка. Використовую аварійні дані з коду.");
+        gameConfig = {
+            reward: 50,
+            timeLimit: 300,
+            doors: [
+                { id: 1, question: "2 + 2 = ?", answer: "4", wrongAnswers: ["5", "1", "0"] },
+                { id: 2, question: "10 - 3 = ?", answer: "7", wrongAnswers: ["6", "8", "1"] }
+            ]
+        };
+    }
+
+    // Кешуємо і відправляємо
     cachedConfig = JSON.stringify(gameConfig);
-
-    // Пробуємо відправити
     trySendConfig();
 }
 
 // ==========================================
-// 2. ВІДПРАВКА ЧЕРЕЗ IFRAME (POST MESSAGE)
+// 2. ВІДПРАВКА В UNITY
 // ==========================================
 function trySendConfig() {
     if (!cachedConfig) return;
 
-    const iframe = document.querySelector("#unity-container iframe");
-    
+    const iframe = document.querySelector("#unity-container iframe"); // Перевір, чи ID контейнера правильний
     if (iframe && iframe.contentWindow) {
-        console.log("🚀 Відправка конфігу в Iframe...");
-        
-        // Шлемо повідомлення у вікно iframe
+        // console.log("🚀 Sending config to Unity...");
         iframe.contentWindow.postMessage({ 
             type: "SET_CONFIG", 
             payload: cachedConfig 
         }, "*");
     } else {
-        console.warn("⏳ Iframe не знайдено. Чекаємо...");
+        setTimeout(trySendConfig, 1000);
     }
 }

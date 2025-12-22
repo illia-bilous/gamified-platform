@@ -23,6 +23,7 @@
         <div id="unity-build-title">MathMaze</div>
       </div>
     </div>
+    
     <script>
       var canvas = document.querySelector("#unity-canvas");
 
@@ -80,8 +81,10 @@
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
               }).then((unityInstance) => {
                 
-                // 1. Зберігаємо Unity в глобальну змінну
+                // --- 🔥 ЗМІНА 1: Зберігаємо Unity в глобальну змінну, щоб мати доступ ззовні 🔥 ---
                 window.unityInstance = unityInstance;
+                console.log("✅ Unity завантажено і збережено в window.unityInstance");
+                // -------------------------------------------------------------------------------
 
                 document.querySelector("#unity-loading-bar").style.display = "none";
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
@@ -96,32 +99,27 @@
     </script>
 
     <script>
-        // Цей скрипт працює як "перекладач" між грою та сайтом
         window.addEventListener('message', function(event) {
             
             // --- ТУДИ (Unity -> Сайт) ---
-
-            // 1. Unity просить конфіг. Передаємо це батьківському сайту.
+            // Якщо повідомлення прийшло від самої сторінки (через .jslib) або від батька
             if (event.data && event.data.type === "REQUEST_CONFIG") {
-                console.log("🔗 Iframe: Unity просить конфіг. Передаю наверх...");
+                console.log("🔗 Iframe: Unity просить конфіг для теми:", event.data.topic);
+                // Пересилаємо батьківському вікну (React сайту)
                 window.parent.postMessage(event.data, "*"); 
             }
 
-            // 2. Unity хоче закритись.
             if (event.data && event.data.type === "CLOSE_GAME") {
-                console.log("🔗 Iframe: Unity виходить. Передаю наверх...");
+                console.log("🔗 Iframe: Unity виходить.");
                 window.parent.postMessage(event.data, "*");
             }
 
-            // 3. Unity пройшла рівень (рядок LEVEL_COMPLETE|...)
             if (typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE")) {
-                 console.log("🔗 Iframe: Перемога! Передаю результат наверх...");
+                 console.log("🔗 Iframe: Перемога!");
                  window.parent.postMessage(event.data, "*");
             }
 
             // --- НАЗАД (Сайт -> Unity) ---
-
-            // 4. Сайт надіслав конфіг. Передаємо його всередину гри.
             if (event.data && event.data.type === "SET_CONFIG") {
                 console.log("📥 Iframe: Отримав дані від сайту. Вставляю в гру...");
                 
@@ -130,7 +128,14 @@
                 if (window.unityInstance) {
                     window.unityInstance.SendMessage("GameManager", "SetLevelConfig", jsonString);
                 } else {
-                    console.error("❌ Iframe: Unity ще не завантажилась!");
+                    console.error("❌ Iframe: Unity ще не завантажилась, не можу передати конфіг!");
+                    // Можна спробувати повторити через секунду
+                    setTimeout(() => {
+                        if (window.unityInstance) {
+                             console.log("📥 Iframe: Спроба №2 передати конфіг...");
+                             window.unityInstance.SendMessage("GameManager", "SetLevelConfig", jsonString);
+                        }
+                    }, 1000);
                 }
             }
         });
