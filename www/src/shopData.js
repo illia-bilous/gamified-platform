@@ -1,13 +1,13 @@
-// src/shopData.js
 import { db } from "./firebase.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// Стандартні дані (використовуються, якщо у вчителя ще немає власних налаштувань)
-const DEFAULT_ITEMS = {
+// ЗАПАСНІ ДАНІ (FALLBACK)
+// Використовуються ТІЛЬКИ якщо немає інтернету або база пуста
+const FALLBACK_ITEMS = {
     micro: [
         { id: "m1", name: "+1 бал", desc: "По будь-якій темі", price: 200 },
         { id: "m2", name: "+1 бал до самостійної", desc: "По будь-якій темі", price: 300 },
-        { id: "m2", name: "Щит від Помилки", desc: "1 помилка не зараховується", price: 300 }
+        { id: "m3", name: "Щит від Помилки", desc: "1 помилка не зараховується", price: 300 }
     ],
     medium: [
         { id: "md1", name: "Звільнення від ДЗ", desc: "Одне домашнє завдання", price: 1000 },
@@ -21,32 +21,49 @@ const DEFAULT_ITEMS = {
     ]
 };
 
-// 👇 1. Отримати товари КОНКРЕТНОГО ВЧИТЕЛЯ
+// 👇 1. Отримати товари (Пріоритет: Вчитель -> Глобальна БД -> Запасний варіант)
 export async function getShopItems(teacherUid) {
-    // Якщо ID вчителя не передали (наприклад, глюк або адмін), повертаємо стандарт
-    if (!teacherUid) {
-        console.warn("⚠️ getShopItems викликано без teacherUid. Повертаємо стандартні.");
-        return DEFAULT_ITEMS;
+    // ЕТАП 1: Перевіряємо, чи є персональні налаштування у вчителя
+    if (teacherUid) {
+        try {
+            const userRef = doc(db, "users", teacherUid);
+            const userSnap = await getDoc(userRef);
+
+            if (userSnap.exists()) {
+                const data = userSnap.data();
+                if (data.treasuryConfig) {
+                    return data.treasuryConfig;
+                }
+            }
+        } catch (error) {
+            console.error("Помилка при завантаженні профілю вчителя:", error);
+        }
     }
 
+    // ЕТАП 2: Якщо у вчителя пусто, беремо ГЛОБАЛЬНУ конфігурацію
     try {
-        // Шукаємо в документі вчителя в колекції "users"
-        const docRef = doc(db, "users", teacherUid);
-        const docSnap = await getDoc(docRef);
+        // Звертаємось до колекції "глобальна_конфігурація", документ "магазин"
+        const globalRef = doc(db, "global_config", "shop");
+        const globalSnap = await getDoc(globalRef);
 
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            // Якщо у вчителя є налаштування 'treasuryConfig', повертаємо їх
-            if (data.treasuryConfig) {
-                return data.treasuryConfig;
+        if (globalSnap.exists()) {
+            const data = globalSnap.data();
+            
+            // Перевірка: чи правильні назви полів у базі?
+            if (data.micro || data.medium || data.large) {
+                return data;
+            } else {
+                console.warn("⚠️ У базі знайдено документ, але поля названі неправильно (має бути micro, medium, large).");
             }
+        } else {
+             console.log("⚠️ Документ 'глобальна_конфігурація/магазин' не знайдено.");
         }
     } catch (error) {
-        console.error("Помилка завантаження магазину:", error);
+        console.error("Помилка при завантаженні глобальної конфігурації:", error);
     }
 
-    // Якщо нічого не знайшли або сталася помилка — повертаємо базу
-    return DEFAULT_ITEMS;
+    // ЕТАП 3: Якщо все пропало — беремо запасні дані з коду
+    return FALLBACK_ITEMS;
 }
 
 // 👇 2. Зберегти налаштування магазину (Тільки для вчителя)
@@ -55,12 +72,9 @@ export async function saveShopItems(teacherUid, newItems) {
 
     try {
         const teacherRef = doc(db, "users", teacherUid);
-        
-        // Оновлюємо поле treasuryConfig у вчителя
         await updateDoc(teacherRef, {
             treasuryConfig: newItems
         });
-        
         console.log("✅ Скарбницю оновлено для вчителя:", teacherUid);
         return true;
     } catch (error) {
@@ -70,7 +84,7 @@ export async function saveShopItems(teacherUid, newItems) {
     }
 }
 
-// 👇 3. Допоміжна функція пошуку (Локальна)
+// 👇 3. Допоміжна функція пошуку
 export function findItemInList(shopData, itemId) {
     if (!shopData) return null;
     const all = [...(shopData.micro || []), ...(shopData.medium || []), ...(shopData.large || [])];

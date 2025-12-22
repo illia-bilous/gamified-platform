@@ -1,11 +1,21 @@
 // src/studentPanel.js
-
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemInList } from "./shopData.js";
 import { db } from "./firebase.js"; 
 import { sendConfigToUnity } from "./gameBridge.js";
-import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+// 👇 ОБ'ЄДНАНИЙ ІМПОРТ (прибирає дублікати та помилки):
+import { 
+    collection, 
+    query, 
+    where, 
+    getDocs, 
+    doc, 
+    updateDoc, 
+    onSnapshot, 
+    increment, 
+    addDoc, 
+    serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 let leaderboardUnsubscribe = null;
 
 // ==========================================
@@ -19,26 +29,30 @@ const AVAILABLE_AVATARS = [
 
 let cachedShopItems = null;
 
+// Змінна для збереження обраної теми (вставте це на початку файлу)
+window.currentTopicId = null; // Змінюйте це значення, коли учень обирає тему в меню
+
 // ==========================================
-// 🎮 ЛОГІКА UNITY (ЗАПУСК ТА ЗАКРИТТЯ)
+// 🎮 ЗАПУСК UNITY
 // ==========================================
-function setupUnityUI() {
+export function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
 
     if (startBtn) {
-        // Клонуємо кнопку, щоб видалити старі події onclick
+        // Клонуємо кнопку, щоб прибрати старі слухачі подій
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
         newBtn.onclick = () => {
             const user = getCurrentUser();
-            if (!user || !user.teacherUid) return alert("Помилка зв'язку з вчителем (Teacher ID not found).");
+            if (!user || !user.teacherUid) return alert("Помилка: Немає ID вчителя.");
 
             if (unityContainer) {
                 unityContainer.classList.remove("hidden");
-                newBtn.style.display = "none"; // Ховаємо кнопку запуску
+                newBtn.style.display = "none";
 
+                // Додаємо кнопку закриття, якщо немає
                 if (!document.getElementById("btn-force-close-unity")) {
                     const closeBtn = document.createElement("button");
                     closeBtn.id = "btn-force-close-unity";
@@ -51,31 +65,46 @@ function setupUnityUI() {
                 let iframe = unityContainer.querySelector("iframe");
                 if (!iframe) {
                     iframe = document.createElement("iframe");
-                    // 👇 URL тепер чистіший
                     iframe.src = `unity/index.html?v=${Date.now()}`;
                     iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
 
-                    // Ретранслятор повідомлень
+                    // 👇 СЛУХАЧ ПОВІДОМЛЕНЬ ВІД UNITY
                     const messageHandler = (event) => {
-                        if (event.source === iframe.contentWindow) {
-                            console.log("🔄 Ретрансляція від Unity:", event.data);
-                            window.postMessage(event.data, "*"); 
+                        // Ігноруємо чужі повідомлення (наприклад від React DevTools)
+                        if (event.source !== iframe.contentWindow) return;
+
+                        console.log("📨 Отримано від Unity:", event.data);
+
+                        // 1. Unity просить конфіг
+                        if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
+                            const topicName = event.data.topic || "Fractions"; // Дефолтна тема
+                            console.log(`🧐 Unity просить тему: ${topicName}`);
+                            
+                            // Викликаємо функцію з gameBridge.js
+                            sendConfigToUnity(topicName, user.teacherUid);
+                        }
+
+                        // 2. Рівень пройдено
+                        if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
+                            try {
+                                const jsonPart = event.data.split("|")[1];
+                                const resultData = JSON.parse(jsonPart);
+                                saveGameResult(resultData, user);
+                            } catch(e) {
+                                console.error("JSON Error:", e);
+                            }
                         }
                     };
                     
                     window.addEventListener("message", messageHandler);
                     iframe._handler = messageHandler; 
-
                     unityContainer.appendChild(iframe);
                 }
-
-                // 👇 ВАЖЛИВО: ЯВНО ВІДПРАВЛЯЄМО КОНФІГУРАЦІЮ
-                console.log("🚀 Запуск гри: відправка конфігурації...");
-                sendConfigToUnity("Fractions", user.teacherUid);
             }
         };
     }
-
+    
+    // Функція закриття гри
     window.closeUnityGame = function() {
         if (unityContainer) {
             unityContainer.classList.add("hidden");
@@ -89,13 +118,38 @@ function setupUnityUI() {
         if (closeBtn) closeBtn.remove();
         
         const currentStartBtn = document.getElementById("btn-start-lesson");
-        if (currentStartBtn) {
-            currentStartBtn.style.display = "inline-block"; 
-        }
-        
-        let u = getCurrentUser();
-        if (typeof updateHomeDisplay === "function") updateHomeDisplay(u);
+        if (currentStartBtn) currentStartBtn.style.display = "inline-block"; 
     };
+}
+
+// 👇 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТУ
+async function saveGameResult(resultData, user) {
+    if (!user) return;
+    try {
+        const goldToEarn = Number(resultData.score || 0);
+        console.log(`🏆 Нарахування ${goldToEarn} золота...`);
+        
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, { "profile.gold": increment(goldToEarn) });
+
+        await addDoc(collection(db, "users", user.uid, "game_history"), {
+            topic: resultData.topic || "Unknown",
+            level: Number(resultData.level) || 1,
+            goldEarned: goldToEarn,
+            teacherId: user.teacherUid,
+            timestamp: serverTimestamp(),
+            win: true
+        });
+
+        // Оновлення UI
+        const goldDisplay = document.getElementById("student-gold-display");
+        if(goldDisplay) {
+            const currentGold = parseInt(goldDisplay.innerText.replace(/\D/g, '') || "0");
+            goldDisplay.innerText = currentGold + goldToEarn;
+        }
+    } catch (e) { 
+        console.error("❌ Save Error:", e); 
+    }
 }
 
 // ==========================================

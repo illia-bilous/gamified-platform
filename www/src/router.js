@@ -4,7 +4,7 @@ import { initAuth, getCurrentUser, renderRegisterForm } from "./auth.js";
 import { initStudentPanel } from "./studentPanel.js";
 import { initTeacherPanel } from "./teacherPanel.js"; 
 import { loadTeacherAnalytics } from "./analytics.js";
-import { handleGameMessage } from "./gameBridge.js"; 
+// ❌ ВИДАЛЕНО: import { handleGameMessage } from "./gameBridge.js"; 
 import { db } from "./firebase.js";
 import { 
     doc, 
@@ -15,8 +15,8 @@ import {
 
 let currentRole = null;
 
-// ✅ ЄДИНЕ МІСЦЕ, де ми слухаємо гру
-window.addEventListener("message", handleGameMessage);
+// ❌ ВИДАЛЕНО: window.addEventListener("message", handleGameMessage);
+// Тепер це робить studentPanel.js локально для iframe
 
 // =========================================================
 // 🛠 СЛУЖБОВІ ФУНКЦІЇ
@@ -58,12 +58,12 @@ function initializeApp() {
     setupButtonListener("btn-back-to-home", () => showScreen("screen-home"));
 
     // 2. Кнопка "Назад" на екрані ВХОДУ (повертає до вибору)
-    setupButtonListener("btn-back-auth1", () => showScreen("screen-auth-choice")); // 👈 ДОДАНО ТУТ
+    setupButtonListener("btn-back-auth1", () => showScreen("screen-auth-choice"));
 
     // 3. Кнопка "Назад" на екрані РЕЄСТРАЦІЇ (повертає до вибору)
-    setupButtonListener("btn-back-auth2", () => { // 👈 ДОДАНО ТУТ
+    setupButtonListener("btn-back-auth2", () => {
         showScreen("screen-auth-choice");
-        resetForms(); // Очищаємо форму, щоб при поверненні вона була пуста
+        resetForms(); 
     });
 
     // Перехід на екран Входу
