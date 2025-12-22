@@ -377,7 +377,7 @@ async function renderLevelEditor() {
                 <select id="editor-topic" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="Fractions">Тема: Дроби</option>
                     <option value="Powers">Тема: Степені</option>
-                    <option value="Quadratics">Тема: Рівняння</option>
+                    <option value="Equations">Тема: Рівняння</option>
                 </select>
                 <select id="editor-level" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="1">Рівень 1 (Легкий)</option>
