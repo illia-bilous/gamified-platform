@@ -2,6 +2,7 @@
 
 import { db } from "./firebase.js";
 import { getCurrentUser } from "./auth.js"; 
+// 👇 Всі функції Firestore беремо з одного місця (CDN)
 import { 
     collection, 
     getDocs, 
@@ -15,7 +16,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // 👇 ОНОВЛЕНИЙ ІМПОРТ: saveShopItems замість updateItemPriceInDB
-import { getShopItems, saveShopItems } from "./shopData.js"; 
+import { getShopItems, saveShopItems } from "./shopData.js";
 
 // ==========================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ ВЧИТЕЛЯ
@@ -435,7 +436,9 @@ function setupLevelEditorLogic() {
     const timeInput = document.getElementById("edit-time");
     const goldInput = document.getElementById("edit-gold");
 
-    // Функція завантаження
+    // ==========================================
+    // 📥 ЗАВАНТАЖЕННЯ (LOAD)
+    // ==========================================
     btnLoad.onclick = async () => {
         const topic = document.getElementById("editor-topic").value;
         const levelNum = document.getElementById("editor-level").value;
@@ -445,27 +448,50 @@ function setupLevelEditorLogic() {
             const docSnap = await getDoc(doc(db, "teacher_configs", user.uid));
             if (docSnap.exists() && docSnap.data()[topic]) {
                 const topicData = docSnap.data()[topic];
-                const levelData = topicData.doors?.find(d => d.id == levelNum);
+                
+                // Знаходимо конкретний рівень у масиві doors
+                // (У Firebase це масив, ми шукаємо по ID)
+                let levelData = null;
+                if (topicData.doors && Array.isArray(topicData.doors)) {
+                    levelData = topicData.doors.find(d => d.id == levelNum);
+                }
 
                 if (levelData) {
-                    qInput.value = levelData.question;
-                    cInput.value = levelData.answer;
-                    wInputs.forEach((inp, i) => { inp.value = levelData.wrongAnswers[i] || ""; });
-                    goldInput.value = topicData.reward;
-                    timeInput.value = topicData.timeLimit;
+                    qInput.value = levelData.question || "";
+                    cInput.value = levelData.answer || "";
+                    wInputs.forEach((inp, i) => { 
+                        inp.value = (levelData.wrongAnswers && levelData.wrongAnswers[i]) ? levelData.wrongAnswers[i] : ""; 
+                    });
+                    
+                    // 🔥 ВИПРАВЛЕННЯ: Беремо нагороду та час саме з ЦЬОГО рівня
+                    // Якщо в рівні немає, беремо дефолт 100/60
+                    goldInput.value = levelData.reward || 100;
+                    timeInput.value = levelData.timeLimit || 60;
+
                     statusText.textContent = "✅ Завантажено!";
                 } else {
-                    statusText.textContent = "ℹ️ Рівень порожній.";
+                    // Якщо рівня ще немає — очищаємо поля
+                    qInput.value = "";
+                    cInput.value = "";
+                    wInputs.forEach(i => i.value = "");
+                    goldInput.value = "100";
+                    timeInput.value = "60";
+                    statusText.textContent = "ℹ️ Новий рівень.";
                 }
             } else {
                 statusText.textContent = "ℹ️ Тема ще не створена.";
             }
             formArea.style.opacity = "1";
             formArea.style.pointerEvents = "auto";
-        } catch (e) { statusText.textContent = "❌ Помилка."; }
+        } catch (e) { 
+            console.error(e);
+            statusText.textContent = "❌ Помилка."; 
+        }
     };
 
-    // Функція збереження
+    // ==========================================
+    // 💾 ЗБЕРЕЖЕННЯ (SAVE)
+    // ==========================================
     btnSave.onclick = async () => {
         const topic = document.getElementById("editor-topic").value;
         const levelNum = parseInt(document.getElementById("editor-level").value);
@@ -480,33 +506,40 @@ function setupLevelEditorLogic() {
             const docSnap = await getDoc(docRef);
             let currentData = docSnap.exists() ? docSnap.data() : {};
 
+            // Створюємо тему, якщо її немає
             if (!currentData[topic]) {
-                currentData[topic] = { 
-                    doors: [], 
-                    reward: parseInt(goldInput.value) || 100, 
-                    timeLimit: parseInt(timeInput.value) || 60 
-                };
+                currentData[topic] = { doors: [] };
             }
 
+            // 🔥 ВИПРАВЛЕННЯ: Формуємо об'єкт рівня з reward і timeLimit
             const doorData = {
                 id: levelNum,
                 question: qInput.value.trim(),
                 answer: cInput.value.trim(),
-                wrongAnswers: wrongs
+                wrongAnswers: wrongs,
+                reward: parseInt(goldInput.value) || 50,      // <--- ТЕПЕР ВОНО ТУТ
+                timeLimit: parseInt(timeInput.value) || 120   // <--- І ТУТ
             };
 
-            const doors = currentData[topic].doors || [];
+            // Отримуємо поточний масив дверей
+            let doors = currentData[topic].doors || [];
+            if (!Array.isArray(doors)) doors = []; // Захист від глюків
+
+            // Шукаємо, чи є вже такий рівень, щоб оновити його
             const index = doors.findIndex(d => d.id === levelNum);
             
             if (index > -1) {
-                doors[index] = doorData;
+                doors[index] = doorData; // Оновлюємо існуючий
             } else {
-                doors.push(doorData);
+                doors.push(doorData);    // Додаємо новий
             }
 
+            // Записуємо назад у тему
             currentData[topic].doors = doors;
-            currentData[topic].reward = parseInt(goldInput.value) || 100;
-            currentData[topic].timeLimit = parseInt(timeInput.value) || 60;
+            
+            // (Опціонально) Можна прибрати запис reward у корінь теми, 
+            // щоб не плутати базу даних, або залишити як дефолтне значення.
+            // Я залишаю це чистим — дані тепер тільки в doors.
 
             await setDoc(docRef, currentData);
             
@@ -843,43 +876,41 @@ async function renderStudentJournal(studentId) {
     const detailsContainer = document.getElementById("student-journal-details");
     if (!detailsContainer) return;
 
+    // Скидаємо контейнер і показуємо лоадер
     detailsContainer.innerHTML = `
-        <div style="background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #444; animation: slideDown 0.3s ease-out;">
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #444; margin-top: 15px;">
             <h3 style="color: #3498db; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
-                📜 Історія проходження
+                📜 Детальна історія ігор
             </h3>
-            <div id="journal-loader" style="color: #aaa;">⏳ Завантаження даних сесій...</div>
+            <div id="journal-loader" style="color: #aaa; text-align:center;">⏳ Завантаження даних...</div>
             <div id="journal-list"></div>
         </div>
     `;
 
+    const db = getFirestore();
+
     try {
-        // Запит до під-колекції 'game_sessions' конкретного учня
+        // ! ВАЖЛИВО: Назва колекції має співпадати з saveGameResult
         const sessionsRef = collection(db, "users", studentId, "game_sessions");
-        // Сортуємо за часом (спочатку нові)
         const q = query(sessionsRef, orderBy("timestamp", "desc"));
         
         const snapshot = await getDocs(q);
         const listContainer = document.getElementById("journal-list");
-        
-        // Перевіряємо, чи елемент все ще існує (на випадок швидкого закриття)
-        const loader = document.getElementById("journal-loader");
-        if (loader) loader.style.display = 'none';
+        document.getElementById("journal-loader").style.display = 'none';
 
         if (snapshot.empty) {
-            listContainer.innerHTML = `<p style="color: #777; font-style: italic;">Учень ще не проходив жодного рівня.</p>`;
+            listContainer.innerHTML = `<p style="color: #777; text-align:center; padding: 20px;">Історія порожня.</p>`;
             return;
         }
 
         let tableHtml = `
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em; color: #ddd;">
                 <thead>
-                    <tr style="color: #888; text-align: left;">
-                        <th style="padding: 8px;">Дата</th>
-                        <th style="padding: 8px;">Тема / Рівень</th>
-                        <th style="padding: 8px;">Результат</th>
-                        <th style="padding: 8px;">Час</th>
-                        <th style="padding: 8px;">Помилки</th>
+                    <tr style="border-bottom: 2px solid #444; color: #888; text-align: left;">
+                        <th style="padding: 10px;">Дата</th>
+                        <th style="padding: 10px;">Тема</th>
+                        <th style="padding: 10px;">Результат</th>
+                        <th style="padding: 10px;">Час</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -887,26 +918,26 @@ async function renderStudentJournal(studentId) {
 
         snapshot.forEach(doc => {
             const data = doc.data();
+            // Красива дата
             const dateObj = data.timestamp ? data.timestamp.toDate() : new Date();
-            const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const dateStr = dateObj.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }) + 
+                          ' ' + dateObj.toLocaleTimeString('uk-UA', { hour: '2-digit', minute:'2-digit' });
             
-            // Стилізація результату
-            const isWin = data.status === 'win';
-            const statusStyle = isWin 
-                ? 'color: #2ecc71; font-weight: bold;' 
-                : 'color: #e74c3c; font-weight: bold;';
-            const statusText = isWin ? '✅ ПЕРЕМОГА' : '❌ ПОРАЗКА';
+            // Колір балів
+            const scoreColor = data.score > 0 ? '#2ecc71' : '#e74c3c'; // Зелений або Червоний
 
             tableHtml += `
                 <tr style="border-bottom: 1px solid #333;">
-                    <td style="padding: 8px; color: #ccc;">${dateStr}</td>
-                    <td style="padding: 8px; color: white;">
-                        <span style="color: #3498db;">${data.topic || 'Unknown'}</span> 
-                        <span style="color: #777;">(D${data.levelId || '?'})</span>
+                    <td style="padding: 10px; color: #aaa;">${dateStr}</td>
+                    <td style="padding: 10px;">
+                        <span style="color: white; font-weight:bold;">${data.topic}</span> 
+                        <span style="color: #666; font-size: 0.8em;">(Рівень ${data.level})</span>
                     </td>
-                    <td style="padding: 8px; ${statusStyle}">${statusText}</td>
-                    <td style="padding: 8px; color: #f1c40f;">${data.timeSpent || 0} сек</td>
-                    <td style="padding: 8px; color: #e74c3c;">${data.mistakes || 0}</td>
+                    <td style="padding: 10px;">
+                        <span style="color: ${scoreColor}; font-weight: bold;">${data.score} 💰</span>
+                        ${data.mistakes > 0 ? `<br><span style="font-size:0.75em; color:#e74c3c">${data.mistakes} помилок</span>` : ''}
+                    </td>
+                    <td style="padding: 10px; color: #f1c40f;">${data.timeSpent || '-'} сек</td>
                 </tr>
             `;
         });
@@ -916,8 +947,6 @@ async function renderStudentJournal(studentId) {
 
     } catch (error) {
         console.error("Error loading journal:", error);
-        if(detailsContainer) {
-            detailsContainer.innerHTML += `<p style="color: red;">Помилка завантаження історії: ${error.message}</p>`;
-        }
+        detailsContainer.innerHTML += `<p style="color: red;">Помилка: ${error.message}</p>`;
     }
 }
