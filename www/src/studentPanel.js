@@ -1,58 +1,52 @@
-// src/studentPanel.js
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemInList } from "./shopData.js";
 import { db } from "./firebase.js"; 
-import { sendConfigToUnity } from "./gameBridge.js";
-// 👇 ОБ'ЄДНАНИЙ ІМПОРТ (прибирає дублікати та помилки):
+
 import { 
     collection, 
     query, 
     where, 
     getDocs, 
+    getDoc, 
+    setDoc, 
     doc, 
+    getDoc, 
+    setDoc, 
     updateDoc, 
     onSnapshot, 
     increment, 
     addDoc, 
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
 let leaderboardUnsubscribe = null;
-
-// ==========================================
-// 🖼️ КОНФІГУРАЦІЯ АВАТАРІВ
-// ==========================================
-const DEFAULT_AVATAR = 'assets/img/base.png';
-const AVAILABLE_AVATARS = [
-    'assets/img/boy.png',
-    'assets/img/girl.png',
-];
-
 let cachedShopItems = null;
 
-// Змінна для збереження обраної теми (вставте це на початку файлу)
-window.currentTopicId = null; // Змінюйте це значення, коли учень обирає тему в меню
+const DEFAULT_AVATAR = 'assets/img/base.png';
+const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
+
+window.currentTopicId = null; 
 
 // ==========================================
-// 🎮 ЗАПУСК UNITY
+// 🎮 ЗАПУСК UNITY (ВИПРАВЛЕНО)
 // ==========================================
 export function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
 
     if (startBtn) {
-        // Клонуємо кнопку, щоб прибрати старі слухачі подій
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
         newBtn.onclick = () => {
-            const user = getCurrentUser();
+            const user = getCurrentUser(); // Ваша функція отримання юзера
             if (!user || !user.teacherUid) return alert("Помилка: Немає ID вчителя.");
 
             if (unityContainer) {
                 unityContainer.classList.remove("hidden");
                 newBtn.style.display = "none";
 
-                // Додаємо кнопку закриття, якщо немає
+                // Кнопка закриття
                 if (!document.getElementById("btn-force-close-unity")) {
                     const closeBtn = document.createElement("button");
                     closeBtn.id = "btn-force-close-unity";
@@ -67,21 +61,23 @@ export function setupUnityUI() {
                     iframe = document.createElement("iframe");
                     iframe.src = `unity/index.html?v=${Date.now()}`;
                     iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
+                    iframe.id = "unity-iframe"; 
 
-                    // 👇 СЛУХАЧ ПОВІДОМЛЕНЬ ВІД UNITY
+                    // 👇 СПРОЩЕНИЙ ОБРОБНИК
                     const messageHandler = (event) => {
-                        // Ігноруємо чужі повідомлення (наприклад від React DevTools)
                         if (event.source !== iframe.contentWindow) return;
 
-                        console.log("📨 Отримано від Unity:", event.data);
+                        console.log("📨 [JS] Отримано від Unity:", event.data);
 
-                        // 1. Unity просить конфіг
+                        // 1. Unity просить конфіг (ігноруємо права доступу, просто даємо)
                         if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
-                            const topicName = event.data.topic || "Fractions"; // Дефолтна тема
-                            console.log(`🧐 Unity просить тему: ${topicName}`);
+                            const topicName = event.data.topic || "Fractions";
+                            const levelRequest = event.data.level || 1;
                             
-                            // Викликаємо функцію з gameBridge.js
-                            sendConfigToUnity(topicName, user.teacherUid);
+                            console.log(`🧐 Unity хоче: Тема=${topicName}, Рівень=${levelRequest}`);
+                            
+                            // Викликаємо функцію БЕЗ передачі об'єкта user, лише ID вчителя
+                            fetchAndSendConfig(user.teacherUid, topicName, levelRequest);
                         }
 
                         // 2. Рівень пройдено
@@ -89,10 +85,13 @@ export function setupUnityUI() {
                             try {
                                 const jsonPart = event.data.split("|")[1];
                                 const resultData = JSON.parse(jsonPart);
-                                saveGameResult(resultData, user);
-                            } catch(e) {
-                                console.error("JSON Error:", e);
-                            }
+                                
+                                console.log("🏆 Рівень пройдено (зберігаємо в БД):", resultData);
+                                
+                                // Просто зберігаємо в БД, не блокуючи гру
+                                saveGameResult(resultData, user); 
+                                
+                            } catch(e) { console.error("JSON Error:", e); }
                         }
                     };
                     
@@ -104,13 +103,13 @@ export function setupUnityUI() {
         };
     }
     
-    // Функція закриття гри
     window.closeUnityGame = function() {
         if (unityContainer) {
             unityContainer.classList.add("hidden");
             const iframe = unityContainer.querySelector("iframe");
             if (iframe) {
                 if (iframe._handler) window.removeEventListener("message", iframe._handler);
+                iframe.src = ""; 
                 iframe.remove();
             }
         }
@@ -122,38 +121,119 @@ export function setupUnityUI() {
     };
 }
 
-// 👇 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТУ
-async function saveGameResult(resultData, user) {
-    if (!user) return;
+// ==========================================
+// 📡 ФУНКЦІЯ ВІДПРАВКИ КОНФІГУ
+// ==========================================
+// 👇 ПРОСТА ВЕРСІЯ: Ніяких перевірок і заборон. 
+// Просто шукаємо те, що просить Unity.
+async function fetchAndSendConfig(teacherId, topic, level) {
+    console.log(`🔍 [FreeMode] Шукаємо конфіг: Вчитель=${teacherId}, Тема=${topic}, Рівень=${level}`);
+
     try {
-        const goldToEarn = Number(resultData.score || 0);
-        console.log(`🏆 Нарахування ${goldToEarn} золота...`);
-        
-        const userRef = doc(db, "users", user.uid);
-        await updateDoc(userRef, { "profile.gold": increment(goldToEarn) });
+        const docRef = doc(db, "teacher_configs", teacherId);
+        const docSnap = await getDoc(docRef);
 
-        await addDoc(collection(db, "users", user.uid, "game_history"), {
-            topic: resultData.topic || "Unknown",
-            level: Number(resultData.level) || 1,
-            goldEarned: goldToEarn,
-            teacherId: user.teacherUid,
-            timestamp: serverTimestamp(),
-            win: true
-        });
+        if (docSnap.exists()) {
+            const data = docSnap.data();
 
-        // Оновлення UI
-        const goldDisplay = document.getElementById("student-gold-display");
-        if(goldDisplay) {
-            const currentGold = parseInt(goldDisplay.innerText.replace(/\D/g, '') || "0");
-            goldDisplay.innerText = currentGold + goldToEarn;
+            if (data[topic]) {
+                const topicData = data[topic];
+                console.log(`📦 Вміст теми '${topic}':`, topicData);
+
+                let levelData = null;
+
+                // 🛠 ВАРІАНТ 0 (Правильний для вашої структури): Рівні лежать у масиві 'doors'
+                if (topicData.doors && Array.isArray(topicData.doors)) {
+                    console.log("👉 Тип даних: Структура з масивом 'doors'");
+                    
+                    // Спробуємо знайти по ID (якщо у об'єкта є поле id == 1)
+                    levelData = topicData.doors.find(d => d.id == level || d.level == level);
+
+                    // Якщо не знайшли по ID, беремо просто по порядку (Рівень 1 = індекс 0)
+                    if (!levelData && topicData.doors[level - 1]) {
+                        console.log(`⚠️ ID не знайдено, беремо елемент за індексом ${level - 1}`);
+                        levelData = topicData.doors[level - 1];
+                        // Допишемо ID, щоб Unity не сварилась
+                        levelData.id = level; 
+                    }
+                } 
+                // ВАРІАНТ 1: Це просто масив (старі дані)
+                else if (Array.isArray(topicData)) {
+                    levelData = topicData.find(l => l.id == level);
+                } 
+                // ВАРІАНТ 2: Об'єкт по ключу (старі дані)
+                else if (topicData[level]) {
+                    levelData = topicData[level];
+                    if (!levelData.id) levelData.id = level;
+                }
+
+                if (levelData) {
+                    console.log(`✅ Рівень ${level} знайдено! Відправляємо в Unity...`);
+                    
+                    // Формуємо відповідь. Unity чекає об'єкт, де є масив doors
+                    const payload = {
+                        doors: [levelData]
+                    };
+
+                    // Якщо є глобальні налаштування теми (час, нагорода), додамо їх теж, може знадобиться
+                    if (topicData.timeLimit) payload.timeLimit = topicData.timeLimit;
+                    if (topicData.reward) payload.reward = topicData.reward;
+                    
+                    const jsonString = JSON.stringify(payload);
+                    
+                    if (window.unityInstance) {
+                        window.unityInstance.SendMessage('GameManager', 'ReceiveConfig', jsonString);
+                    } else {
+                        const iframe = document.querySelector("#unity-container iframe");
+                        if (iframe && iframe.contentWindow) {
+                             iframe.contentWindow.postMessage(jsonString, "*");
+                        }
+                    }
+                } else {
+                    console.error(`❌ Рівень ${level} не знайдено в масиві doors теми ${topic}.`);
+                }
+            } else {
+                console.error(`❌ Тема ${topic} відсутня у вчителя.`);
+            }
+        } else {
+            console.error("❌ Конфіг вчителя не знайдено в БД.");
         }
-    } catch (e) { 
-        console.error("❌ Save Error:", e); 
+    } catch (error) {
+        console.error("🔥 Помилка завантаження конфігу:", error);
     }
 }
 
 // ==========================================
-// 🦁 СИСТЕМА АВАТАРІВ
+// 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
+// ==========================================
+async function saveGameResult(resultData, user) {
+    if (!user) return;
+    try {
+        const score = Number(resultData.score || 0);
+        const topic = resultData.topic || "Unknown";
+        const level = Number(resultData.level) || 1; 
+        const maxScore = resultData.maxScore || 100; 
+
+        console.log(`🏆 Saving: ${topic}, Lvl: ${level}, Score: ${score}`);
+
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, { "profile.gold": increment(score) });
+
+        await addDoc(collection(db, "users", user.uid, "game_sessions"), {
+            topic: topic, level: level, score: score, mistakes: resultData.mistakes || 0,
+            timeSpent: resultData.timeSpent || 0, timestamp: serverTimestamp(), win: score > 0 
+        });
+
+        const goldDisplay = document.getElementById("student-gold-display");
+        if(goldDisplay) {
+            const currentGold = parseInt(goldDisplay.innerText.replace(/\D/g, '') || "0");
+            goldDisplay.innerText = `${currentGold + score} 💰`;
+        }
+    } catch (e) { console.error("❌ Save Error:", e); }
+}
+
+// ==========================================
+// 🦁 ІНШІ ФУНКЦІЇ (Залишились без змін)
 // ==========================================
 function setupAvatarSystem(user) {
     const editBtn = document.getElementById("btn-edit-avatar");
@@ -170,9 +250,7 @@ function openAvatarModal() {
     if (!container) return;
 
     let currentAvatar = user.profile.avatar || DEFAULT_AVATAR;
-    if (currentAvatar.includes('assets/avatars/')) {
-        currentAvatar = currentAvatar.replace('assets/avatars/', 'assets/img/');
-    }
+    if (currentAvatar.includes('assets/avatars/')) currentAvatar = currentAvatar.replace('assets/avatars/', 'assets/img/');
 
     let avatarsHtml = AVAILABLE_AVATARS.map(src => `
         <div class="avatar-option ${src === currentAvatar ? 'selected' : ''}" onclick="selectAvatar('${src}')">
@@ -187,11 +265,9 @@ function openAvatarModal() {
                 <div class="avatars-grid">${avatarsHtml}</div>
                 <button class="close-modal-btn" onclick="closeAvatarModal()">Закрити</button>
             </div>
-        </div>
-    `;
+        </div>`;
     
     window.closeAvatarModal = () => { container.innerHTML = ""; };
-
     window.selectAvatar = async (newSrc) => {
         const currentUser = getCurrentUser();
         currentUser.profile.avatar = newSrc;
@@ -201,22 +277,14 @@ function openAvatarModal() {
     };
 }
 
-// ==========================================
-// 💰 МАГАЗИН ТА ІНВЕНТАР
-// ==========================================
 function renderShopSection(containerId, items) {
     const container = document.getElementById(containerId);
     if (!container || !items) return;
     container.innerHTML = "";
-    
     items.forEach(item => {
         const div = document.createElement("div");
         div.className = "shop-item";
-        div.innerHTML = `
-            <div class="shop-item-row"><div class="item-name">${item.name}</div><div class="item-price">${item.price} 💰</div></div>
-            <div class="item-desc">${item.desc}</div>
-            <button class="btn-buy" data-id="${item.id}">Купити</button>
-        `;
+        div.innerHTML = `<div class="shop-item-row"><div class="item-name">${item.name}</div><div class="item-price">${item.price} 💰</div></div><div class="item-desc">${item.desc}</div><button class="btn-buy" data-id="${item.id}">Купити</button>`;
         div.querySelector(".btn-buy").onclick = () => buyItem(item);
         container.appendChild(div);
     });
@@ -226,7 +294,6 @@ function buyItem(visualItem) {
     let u = getCurrentUser();
     const realItem = findItemInList(cachedShopItems, visualItem.id);
     if (!realItem) return;
-
     if (u.profile.gold >= realItem.price) {
         if (!confirm(`Купити "${realItem.name}" за ${realItem.price} золота?`)) return;
         u.profile.gold -= realItem.price;
@@ -243,7 +310,6 @@ function buyItem(visualItem) {
 function renderInventory(currentUser) {
     const listEl = document.getElementById("student-inventory-list");
     if (!listEl) return;
-    
     const userInv = currentUser.profile.inventory || [];
     if (userInv.length === 0) {
         listEl.innerHTML = '<li class="empty-msg" style="width:100%; text-align:center;">Поки що пусто...</li>';
@@ -251,55 +317,43 @@ function renderInventory(currentUser) {
         return;
     }
 
-    listEl.className = "treasury-grid"; // Використовуємо той самий стиль, що і магазин
+    listEl.className = "treasury-grid";
     listEl.style.display = "flex";
     listEl.innerHTML = "";
 
     const shopDB = cachedShopItems || { micro: [], medium: [], large: [] };
-
     const createColumn = (title, dbItems) => {
         const safeItems = dbItems || [];
         const itemsInCat = safeItems.filter(shopItem => userInv.some(uItem => uItem.name === shopItem.name));
         let contentHtml = itemsInCat.length === 0 ? `<div class="inv-empty-category">Пусто...</div>` : "";
-        
         itemsInCat.forEach(shopItem => {
             const count = userInv.filter(uItem => uItem.name === shopItem.name).length;
-            contentHtml += `
-                <div class="inventory-card-item">
-                    <div class="inv-name">${shopItem.name} <span class="item-count">x${count}</span></div>
-                    <div class="inv-desc">${shopItem.desc}</div>
-                </div>`;
+            contentHtml += `<div class="inventory-card-item"><div class="inv-name">${shopItem.name} <span class="item-count">x${count}</span></div><div class="inv-desc">${shopItem.desc}</div></div>`;
         });
         
-        // 🔥 ОНОВЛЕНО: використовуємо 'section-sub-header' замість 'reward-header'
         return `
             <div class="reward-column">
                 <div class="section-sub-header">${title}</div>
                 <div class="inventory-column-content">${contentHtml}</div>
             </div>`;
     };
-
     listEl.innerHTML += createColumn("Мої Мікро-нагороди", shopDB.micro);
     listEl.innerHTML += createColumn("Мої Середні нагороди", shopDB.medium);
     listEl.innerHTML += createColumn("Мої Великі нагороди", shopDB.large);
 }
 
 // ==========================================
-// 🏆 ЛІДЕРБОРД (ОНОВЛЕНО ПІД НОВИЙ ДИЗАЙН)
+// 🏆 ЛІДЕРБОРД
 // ==========================================
-// src/studentPanel.js
-
 function renderLeaderboard(currentUser) {
     const container = document.getElementById("view-leaderboard");
     if (!container) return;
 
-    // 1. Очистка старого підписника (якщо був)
     if (leaderboardUnsubscribe) {
         leaderboardUnsubscribe();
         leaderboardUnsubscribe = null;
     }
 
-    // 2. ВСТАВЛЯЄМО HTML (Золотий заголовок + Пуста таблиця)
     container.innerHTML = `
         <div class="page-header-container">
             <h2 class="page-header-title">🏆 Рейтинг Класу ${currentUser.className || ""}</h2>
@@ -323,138 +377,128 @@ function renderLeaderboard(currentUser) {
         </div>
     `;
 
-    // 3. ВСТАВЛЯЄМО ТВІЙ КОД (Логіка наповнення таблиці)
-    // 👇👇👇 ОСЬ СЮДИ ВСТАВЛЯЄТЬСЯ ТЕ, ЩО ТИ СКИНУВ 👇👇👇
     const tbody = document.getElementById("leaderboard-body");
-
-    const q = query(
-        collection(db, "users"),
-        where("role", "==", "student"),
-        where("className", "==", currentUser.className),
-        where("teacherUid", "==", currentUser.teacherUid)
-    );
-
-    leaderboardUnsubscribe = onSnapshot(q, (querySnapshot) => {
-        let classmates = [];
-
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            let safeGold = Number(data.profile?.gold) || 0;
-            classmates.push({ ...data, uid: doc.id, cleanGold: safeGold });
-        });
-        
-        classmates.sort((a, b) => b.cleanGold - a.cleanGold);
-
-        if (classmates.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px; color:#777;">Клас пустий...</td></tr>`;
-            return;
-        }
-
+    const q = query(collection(db, "users"), where("role", "==", "student"), where("className", "==", currentUser.className), where("teacherUid", "==", currentUser.teacherUid));
+    leaderboardUnsubscribe = onSnapshot(q, (snapshot) => {
+        let mates = [];
+        snapshot.forEach((d) => mates.push({ ...d.data(), uid: d.id, cleanGold: Number(d.data().profile?.gold) || 0 }));
+        mates.sort((a, b) => b.cleanGold - a.cleanGold);
+        if (mates.length === 0) { tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px; color:#777;">Клас пустий...</td></tr>`; return; }
         tbody.innerHTML = "";
-        
-        classmates.forEach((student, index) => {
-            const tr = document.createElement("tr");
-            let rankClass = "rank-other"; 
-            let rankIcon = `#${index + 1}`;
-            
-            if (index === 0) { rankClass = "rank-1"; rankIcon = "👑 1"; }
-            else if (index === 1) { rankClass = "rank-2"; rankIcon = "🥈 2"; }
-            else if (index === 2) { rankClass = "rank-3"; rankIcon = "🥉 3"; }
-
-            tr.className = rankClass;
-            if (student.uid === currentUser.uid) tr.classList.add("is-current-user");
-
-            let ava = student.profile?.avatar || 'assets/img/base.png';
+        mates.forEach((s, i) => {
+            let rC = "rank-other", rI = `#${i+1}`;
+            if (i===0) {rC="rank-1";rI="👑 1";} else if(i===1){rC="rank-2";rI="🥈 2";} else if(i===2){rC="rank-3";rI="🥉 3";}
+            let ava = s.profile?.avatar || DEFAULT_AVATAR;
             if (ava.includes('assets/avatars/')) ava = ava.replace('assets/avatars/', 'assets/img/');
-
-            tr.innerHTML = `
-                <td class="rank-col" style="font-weight:bold; font-size: 1.2em;">${rankIcon}</td>
-                <td class="name-col" style="font-size: 1.2em; color: white; display: flex; align-items: center; gap: 15px;">
-                    <img src="${ava}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #555;" onerror="this.src='assets/img/base.png'">
-                    ${student.name}
-                </td>
-                <td class="gold-col" style="color: #f1c40f; font-weight: 800; font-size: 1.2em;">${student.cleanGold} 💰</td>
-            `;
-            tbody.appendChild(tr);
+            tbody.innerHTML += `<tr class="${rC} ${s.uid===currentUser.uid?'is-current-user':''}"><td class="rank-col" style="font-weight:bold; font-size: 1.2em;">${rI}</td><td class="name-col" style="font-size: 1.2em; color: white; display: flex; align-items: center; gap: 15px;"><img src="${ava}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #555;">${s.name}</td><td class="gold-col" style="color: #f1c40f; font-weight: 800; font-size: 1.2em;">${s.cleanGold} 💰</td></tr>`;
         });
-    }, (error) => {
-        console.error("Помилка лідерборду:", error);
-        tbody.innerHTML = `<tr><td colspan="3" style="color:#e74c3c; text-align:center;">Помилка завантаження</td></tr>`;
     });
 }
 
 // ==========================================
-// 🛠️ СИСТЕМНІ ФУНКЦІЇ
+// 🛠️ СИСТЕМНІ ФУНКЦІЇ (ОНОВЛЕНО!)
 // ==========================================
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
     document.getElementById("student-class-display").textContent = currentUser.className || "--";
-    
     const avatarImg = document.getElementById("current-user-avatar");
     if (avatarImg) {
         let path = currentUser.profile.avatar || DEFAULT_AVATAR;
         if (path.includes('assets/avatars/')) path = path.replace('assets/avatars/', 'assets/img/');
         avatarImg.src = path;
     }
-
     const goldEl = document.getElementById("student-gold-display");
-    if (goldEl) {
-        goldEl.textContent = currentUser.profile.gold;
-    }
+    if (goldEl) goldEl.textContent = currentUser.profile.gold;
     renderInventory(currentUser);
 }
 
 async function saveUserData(user) {
     localStorage.setItem("currentUser", JSON.stringify(user));
-    if (user.uid) {
-        try {   
-            const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, { profile: user.profile });
-        } catch (e) { console.error("Save Error:", e); }
-    }
+    if (user.uid) await updateDoc(doc(db, "users", user.uid), { profile: user.profile });
 }
 
+// 🔥 ОНОВЛЕНО: ТЕПЕР СЛУХАЄ КОМАНДУ НА "BOMB" (СКИДАННЯ)
 function startLiveGoldTracker(userId) {
-    console.log("📡 Запущено живий трекер золота...");
+    console.log("📡 Запущено живий трекер + слухач скидання...");
     const userRef = doc(db, "users", userId);
     
-    onSnapshot(userRef, (docSnap) => {
+    onSnapshot(userRef, async (docSnap) => {
         if (docSnap.exists()) {
             const freshData = docSnap.data();
+
+            // 🛑 === ЛОГІКА HARD RESET (CLEAR DATA) === 🛑
+            if (freshData.needReset === true) {
+                console.warn("🧨 Вчитель активував повне скидання (бомбу)!");
+                
+                // 1. Знімаємо прапорець у базі, щоб не зациклилось
+                await updateDoc(userRef, { needReset: false });
+                
+                // 2. Видаляємо Unity DB (це і є Clear Data)
+                const req = indexedDB.deleteDatabase("/idbfs");
+                
+                req.onsuccess = () => {
+                    console.log("✅ База Unity видалена.");
+                    alert("УВАГА: Вчитель повністю скинув ваш ігровий прогрес.");
+                    // 3. Перезавантажуємо сторінку
+                    location.reload();
+                };
+                
+                req.onerror = () => {
+                    console.error("❌ Не вдалося видалити базу.");
+                    alert("Спроба скидання не вдалася. Спробуйте очистити кеш вручну.");
+                };
+                return; // Виходимо, далі нічого не оновлюємо
+            }
+            // ============================================
+
             let user = getCurrentUser();
-            user.profile = freshData.profile;
+            user.profile = docSnap.data().profile;
             localStorage.setItem("currentUser", JSON.stringify(user));
             updateHomeDisplay(user);
         }
     });
 }
 
-// ==========================================
-// 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ
-// ==========================================
 export async function initStudentPanel() {
     let user = getCurrentUser();
     if (!user) return;
-
     startLiveGoldTracker(user.uid);
-
-    try {
-        console.log("🛒 Завантажуємо магазин вчителя:", user.teacherUid);
-        cachedShopItems = await getShopItems(user.teacherUid);
-    } catch (e) {
-        cachedShopItems = { micro: [], medium: [], large: [] };
-    }
-
+    try { cachedShopItems = await getShopItems(user.teacherUid); } catch (e) { cachedShopItems = { micro: [], medium: [], large: [] }; }
     updateHomeDisplay(user);
     renderLeaderboard(user);
     setupAvatarSystem(user);
-
     if (cachedShopItems) {
         renderShopSection("rewards-micro-list", cachedShopItems.micro);
         renderShopSection("rewards-medium-list", cachedShopItems.medium);
         renderShopSection("rewards-large-list", cachedShopItems.large);
     }
-
     setupUnityUI();
 }
+
+// ==========================================
+// 🛠️ АДМІН-ФУНКЦІЇ (Для тесту через консоль)
+// ==========================================
+
+// 1. Просто заборонити рівень (Soft Reset)
+window.resetStudentLevel = async (studentId, topic, newLevel) => {
+    try {
+        const userRef = doc(db, "users", studentId);
+        await setDoc(userRef, {
+            progress: {
+                [topic]: { maxAllowedLevel: newLevel }
+            }
+        }, { merge: true });
+        console.log(`✅ Soft Reset: maxLevel -> ${newLevel}`);
+    } catch (e) { console.error(e); }
+};
+
+// 2. ПОВНЕ СКИДАННЯ (Hard Reset / Bomb)
+window.adminHardReset = async (studentId) => {
+    try {
+        const userRef = doc(db, "users", studentId);
+        // Ставимо мітку, яку зловить startLiveGoldTracker
+        await updateDoc(userRef, { needReset: true });
+        console.log(`💣 Hard Reset: Відправлено команду знищення даних учню ${studentId}`);
+    } catch (e) { console.error(e); }
+};

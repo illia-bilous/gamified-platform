@@ -1,102 +1,130 @@
-// src/gameBridge.js
-import { db } from "./firebase.js"; // Перевір, що шлях правильний
+import { db } from "./firebase.js"; 
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-let cachedConfig = null;
+let cachedPayload = null; 
 
 // ==========================================
-// 1. ОТРИМАННЯ ДАНИХ (Вчитель -> Глобальні -> Запасні)
+// 1. ОТРИМАННЯ ДАНИХ ТА ВІДПРАВКА
 // ==========================================
-export async function sendConfigToUnity(topicId, teacherId) {
-    console.log(`📥 Завантаження рівня: Teacher=${teacherId}, Topic=${topicId}`);
+export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) {
+    console.log(`📥 GameBridge: Завантаження... Teacher=${teacherId}, Topic=${topic}, Level=${level}`);
 
-    let gameConfig = null;
+    const iframe = document.getElementById("unity-iframe");
+    if (!iframe || !iframe.contentWindow) {
+        console.error("❌ GameBridge: Unity Iframe не знайдено!");
+        return;
+    }
 
-    // ---------------------------------------------------------
-    // ЕТАП 1: Шукаємо особистий конфіг вчителя
-    // ---------------------------------------------------------
-    if (teacherId) {
-        try {
-            // Шукаємо документ, де ID = UID вчителя
-            const teacherRef = doc(db, "teacher_configs", teacherId);
-            const snapshot = await getDoc(teacherRef);
+    // Базовий конфіг
+    let finalConfig = {
+        reward: 50,     // Глобальний фоллбек
+        timeLimit: 300, // Глобальний фоллбек
+        doors: [],      // Сюди ми покладемо наші дані
+        topic: topic,
+        level: level,
+        teacherId: teacherId,
+        studentId: studentId
+    };
 
-            if (snapshot.exists()) {
-                const data = snapshot.data();
-                console.log(`📂 У вчителя знайдено теми:`, Object.keys(data)); // 👈 ДУЖЕ КОРИСНИЙ ЛОГ
+    try {
+        const configRef = doc(db, "teacher_configs", teacherId);
+        const configSnap = await getDoc(configRef);
 
-                // Перевіряємо точний збіг (Fractions == Fractions)
-                if (data[topicId]) {
-                    console.log(`✅ Знайдено персональний рівень вчителя для "${topicId}"!`);
-                    gameConfig = data[topicId];
-                } else {
-                    console.warn(`⚠️ Вчитель існує, але теми "${topicId}" немає. Доступні: ${Object.keys(data).join(", ")}`);
+        if (configSnap.exists()) {
+            const data = configSnap.data();
+            
+            // 1. Шукаємо тему
+            let topicData = data[topic]; 
+            if (!topicData && data.topics) {
+                topicData = data.topics[topic];
+            }
+
+            if (topicData) {
+                console.log(`📂 Дані теми знайдено. Структура:`, topicData);
+                
+                let foundDoors = []; // Тимчасова змінна для дверей
+
+                // =========================================================
+                // 🔍 ЛОГІКА ВИЗНАЧЕННЯ СТРУКТУРИ (Виправлена)
+                // =========================================================
+
+                // ВАРІАНТ 1: Класичний (всередині теми є масив "doors") -> Це твій "Fractions"
+                if (topicData.doors && Array.isArray(topicData.doors)) {
+                    console.log("✅ Тип: Standard 'doors' array");
+                    // Ми беремо ВЕСЬ масив, бо C# сам знайде потрібний ID всередині
+                    foundDoors = topicData.doors; 
                 }
+                
+                // ВАРІАНТ 2: Сама тема є масивом рівнів [Level1, Level2]
+                else if (Array.isArray(topicData)) {
+                    console.log("✅ Тип: Array of levels");
+                    const idx = level - 1;
+                    if (topicData[idx]) {
+                        // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив, щоб C# його з'їв
+                        foundDoors = [ topicData[idx] ]; 
+                    }
+                }
+                
+                // ВАРІАНТ 3: Сама тема є об'єктом рівнів {"1": {...}, "2": {...}}
+                else if (typeof topicData === 'object') {
+                    console.log("✅ Тип: Object map");
+                    let specificLevel = topicData[level] || topicData[String(level)];
+                    if (specificLevel) {
+                         // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив
+                        foundDoors = [ specificLevel ];
+                    }
+                }
+
+                // =========================================================
+                // 📤 ФОРМУВАННЯ ФІНАЛЬНОГО ОБ'ЄКТА
+                // =========================================================
+                
+                // Якщо ми знайшли двері (або одну, або список)
+                if (foundDoors.length > 0) {
+                    finalConfig.doors = foundDoors;
+                    
+                    // Спробуємо витягнути глобальні налаштування теми, якщо вони є
+                    if (topicData.reward) finalConfig.reward = parseInt(topicData.reward);
+                    if (topicData.timeLimit) finalConfig.timeLimit = parseInt(topicData.timeLimit);
+                    
+                    console.log(`🎯 УСПІХ! Відправляємо дверей: ${finalConfig.doors.length}`);
+                    
+                    // Лог для перевірки, чи є reward всередині дверей
+                    const targetDoor = finalConfig.doors.find(d => d.id == level);
+                    if(targetDoor) {
+                        console.log(`🧐 Перевірка для рівня ${level}: Reward=${targetDoor.reward}, Time=${targetDoor.timeLimit}`);
+                    }
+                } else {
+                    console.warn(`⚠️ Рівень ${level} не знайдено в темі!`);
+                }
+
             } else {
-                console.warn(`⚠️ Документ вчителя (ID: ${teacherId}) не знайдено в teacher_configs.`);
+                console.warn(`⚠️ Тему '${topic}' не знайдено.`);
             }
-        } catch (e) {
-            console.error("❌ Помилка читання вчителя:", e);
         }
+    } catch (error) {
+        console.error("❌ ERROR Config:", error);
     }
 
-    // ---------------------------------------------------------
-    // ЕТАП 2: Якщо у вчителя пусто -> ГЛОБАЛЬНИЙ КОНФІГ
-    // ---------------------------------------------------------
-    if (!gameConfig) {
-        console.log("🔄 Перемикаємось на пошук глобального шаблону...");
-        try {
-            const globalRef = doc(db, "global_config", "game_levels");
-            const globalSnap = await getDoc(globalRef);
+    const payload = JSON.stringify(finalConfig);
+    cachedPayload = payload; // Зберігаємо для ретраю
 
-            if (globalSnap.exists()) {
-                const gData = globalSnap.data();
-                if (gData[topicId]) {
-                    console.log("✅ Завантажено ГЛОБАЛЬНИЙ рівень.");
-                    gameConfig = gData[topicId];
-                } else {
-                    console.warn(`⚠️ Глобальний рівень для "${topicId}" теж відсутній.`);
-                }
-            }
-        } catch (e) {
-            console.error("❌ Помилка глобального конфігу:", e);
-        }
-    }
-
-    // ---------------------------------------------------------
-    // ЕТАП 3: Якщо все пропало -> Хардкод (FALLBACK)
-    // ---------------------------------------------------------
-    if (!gameConfig) {
-        console.warn("⚠️ База пуста або помилка. Використовую аварійні дані з коду.");
-        gameConfig = {
-            reward: 50,
-            timeLimit: 300,
-            doors: [
-                { id: 1, question: "2 + 2 = ?", answer: "4", wrongAnswers: ["5", "1", "0"] },
-                { id: 2, question: "10 - 3 = ?", answer: "7", wrongAnswers: ["6", "8", "1"] }
-            ]
-        };
-    }
-
-    // Кешуємо і відправляємо
-    cachedConfig = JSON.stringify(gameConfig);
-    trySendConfig();
+    console.log("📤 Sending JSON to Unity:", payload);
+    
+    iframe.contentWindow.postMessage({ 
+        type: "CONFIG_RESPONSE", 
+        payload: payload 
+    }, "*");
 }
 
-// ==========================================
-// 2. ВІДПРАВКА В UNITY
-// ==========================================
-function trySendConfig() {
-    if (!cachedConfig) return;
-
-    const iframe = document.querySelector("#unity-container iframe"); // Перевір, чи ID контейнера правильний
-    if (iframe && iframe.contentWindow) {
-        // console.log("🚀 Sending config to Unity...");
-        iframe.contentWindow.postMessage({ 
-            type: "SET_CONFIG", 
-            payload: cachedConfig 
+// Функція для повторної відправки (якщо Unity завантажилась пізніше)
+window.trySendToUnity = function() { // Робимо доступною глобально про всяк випадок
+    if (!cachedPayload) return;
+    let unityFrame = document.getElementById("unity-iframe");
+    if (unityFrame && unityFrame.contentWindow) {
+        unityFrame.contentWindow.postMessage({ 
+            type: "CONFIG_RESPONSE", 
+            payload: cachedPayload 
         }, "*");
-    } else {
-        setTimeout(trySendConfig, 1000);
     }
-}
+};
