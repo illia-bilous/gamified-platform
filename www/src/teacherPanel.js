@@ -15,8 +15,7 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// 👇 ОНОВЛЕНИЙ ІМПОРТ: saveShopItems замість updateItemPriceInDB
-import { getShopItems, saveShopItems } from "./shopData.js";
+import { getShopItems, saveShopItems } from "./shopData.js"; 
 
 // ==========================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ ВЧИТЕЛЯ
@@ -94,10 +93,8 @@ const grid = document.getElementById("class-cards");
 
 classes.forEach(className => {
     const card = document.createElement("div");
-    // Додаємо клас, щоб картки теж були красивими
     card.className = "class-card"; 
     
-    // Внутрішній HTML картки
     card.innerHTML = `
         <h3>${className}</h3>
         <p>Переглянути успішність →</p>
@@ -191,21 +188,21 @@ function setupProfileView(students) {
     });
 }
 
+// ==========================================
+// 👤 ОНОВЛЕНИЙ РЕНДЕР ПРОФІЛЮ (Soft Reset + Topic Reset)
+// ==========================================
 async function renderStudentProfile(student) {
     const container = document.getElementById("teacher-content");
     if (!container) return;
 
-    // 1. Підготовка даних (Інвентар)
+    // --- (Код підготовки інвентаря) ---
     const inventory = student.profile?.inventory || [];
-    
-    // Групуємо однакові предмети: { "Назва": 5, "Інша": 1 }
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
         acc[itemName] = (acc[itemName] || 0) + 1;
         return acc;
     }, {});
 
-    // Генеруємо HTML список з кнопками
     const inventoryListHtml = Object.keys(stackedInventory).length > 0
         ? Object.keys(stackedInventory).map(name => `
             <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
@@ -218,7 +215,7 @@ async function renderStudentProfile(student) {
         
     const goldDisplay = student.profile?.gold || 0; 
 
-    // 2. HTML Рендер
+    // --- HTML ---
     container.innerHTML = `
         <div class="student-profile-view" style="color: white; padding: 10px; animation: fadeIn 0.3s ease;">
             
@@ -233,16 +230,43 @@ async function renderStudentProfile(student) {
 
             <div style="display: flex; gap: 30px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
                 
-                <div style="background: #1e1e1e; padding: 30px; border-radius: 20px; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #333;">
-                    <h3 style="color: #3498db; margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <span>📋</span> Основні Дані
-                    </h3>
-                    <p style="margin: 20px 0; font-size: 1.1em;">🎓 <b>Клас:</b> <span style="color: #3498db;">${student.className}</span></p>
-                    <p style="margin: 20px 0; font-size: 1.1em;">🆔 <b>Логін:</b> <span style="color: #3498db;">${student.loginID}</span></p>
+                <div style="display:flex; flex-direction:column; gap: 20px;">
+                    <div style="background: #1e1e1e; padding: 30px; border-radius: 20px; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #333;">
+                        <h3 style="color: #3498db; margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                            <span>📋</span> Основні Дані
+                        </h3>
+                        <p style="margin: 20px 0; font-size: 1.1em;">🎓 <b>Клас:</b> <span style="color: #3498db;">${student.className}</span></p>
+                        <p style="margin: 20px 0; font-size: 1.1em;">🆔 <b>Логін:</b> <span style="color: #3498db;">${student.loginID}</span></p>
+                    </div>
+
+                    <div style="background: #251e12; padding: 20px; border-radius: 20px; width: 300px; border: 1px solid #e67e22;">
+                        <h3 style="color: #e67e22; margin-top: 0; margin-bottom: 15px; font-size: 1.2em;">🎮 Проходження гри</h3>
+                        
+                        <div style="margin-bottom: 20px; border-bottom: 1px solid #d35400; padding-bottom: 15px;">
+                            <p style="color: #aaa; font-size: 0.8em; margin-bottom: 8px;">Скинути прогрес певної теми:</p>
+                            
+                            <select id="reset-topic-select" style="width: 100%; padding: 10px; background: #000; color: white; border: 1px solid #e67e22; border-radius: 5px; margin-bottom: 10px;">
+                                <option value="Fractions">Дроби (Fractions)</option>
+                                <option value="Powers">Степені (Powers)</option>
+                                <option value="Quadratics">Рівняння (Quadratics)</option>
+                            </select>
+
+                            <button id="btn-reset-topic" style="width: 100%; padding: 10px; background: #d35400; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s;">
+                                🔄 СКИНУТИ ТЕМУ
+                            </button>
+                        </div>
+
+                        <p style="color: #aaa; font-size: 0.8em; margin-bottom: 10px;">
+                            Або скинути всі відкриті рівні у всіх темах:
+                        </p>
+                        <button id="btn-reset-levels" style="width: 100%; padding: 12px; background: #c0392b; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s;">
+                            🔥 СКИНУТИ ВСІ РІВНІ
+                        </button>
+                    </div>
                 </div>
 
                 <div style="background: #1e1e1e; padding: 30px; border-radius: 20px; width: 340px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #333;">
-                    <h3 style="color: #f1c40f; margin-top: 0; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                     <h3 style="color: #f1c40f; margin-top: 0; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <span>💰</span> Баланс Золота
                     </h3>
                     
@@ -266,60 +290,87 @@ async function renderStudentProfile(student) {
         </div>
     `;
 
-    // 3. ЛОГІКА КНОПОК
+    // --- ЛОГІКА КНОПОК ---
 
-    // Кнопка "Назад"
     document.getElementById("btn-back-to-list").onclick = () => {
-        if (student.className && typeof renderClassLeaderboard === 'function') {
-            renderClassLeaderboard(student.className);
-        } else {
-            renderTeacherDashboard("teacher-content");
-        }
+        if (student.className) renderClassLeaderboard(student.className);
+        else renderTeacherDashboard("teacher-content");
     };
 
-    // Кнопка "Оновити золото"
+    // Оновлення золота
     document.getElementById("btn-save-gold").onclick = async () => {
         const input = document.getElementById("gold-input");
         const newVal = parseInt(input.value);
-        
-        if (isNaN(newVal) || newVal < 0) {
-            alert("⚠️ Будь ласка, введіть число (0 або більше)");
-            return;
-        }
+        if (isNaN(newVal) || newVal < 0) return alert("⚠️ Введіть коректне число");
 
         try {
-            const studentRef = doc(db, "users", student.uid);
-            await updateDoc(studentRef, { "profile.gold": newVal });
-            alert("✅ Баланс золота успішно змінено!");
-            
-            // Оновлюємо локальний об'єкт і перемальовуємо
+            await updateDoc(doc(db, "users", student.uid), { "profile.gold": newVal });
+            alert("✅ Баланс оновлено!");
             student.profile.gold = newVal;
             renderStudentProfile(student);
-        } catch (e) {
-            console.error("Firebase Update Error:", e);
-            alert("❌ Помилка оновлення.");
+        } catch (e) { console.error(e); alert("❌ Помилка"); }
+    };
+
+    // 🔥 КНОПКА СКИДАННЯ ВСІХ РІВНІВ
+    document.getElementById("btn-reset-levels").onclick = async () => {
+        await resetGameLevels(student.uid, student.name);
+    };
+
+    // 🔄 КНОПКА СКИДАННЯ КОНКРЕТНОЇ ТЕМИ (НОВА)
+    document.getElementById("btn-reset-topic").onclick = async () => {
+        const topicSelect = document.getElementById("reset-topic-select");
+        const topicID = topicSelect.value;
+        const topicName = topicSelect.options[topicSelect.selectedIndex].text;
+
+        const isConfirmed = confirm(`Скинути тему "${topicName}" для учня ${student.name}?\n\nВсі рівні цієї теми заблокуються.`);
+        if (!isConfirmed) return;
+
+        try {
+            await updateDoc(doc(db, "users", student.uid), { 
+                resetTopicCommand: topicID 
+            });
+            alert(`✅ Команда відправлена! Unity оновить дані при вході.`);
+        } catch (error) {
+            console.error(error);
+            alert("❌ Помилка: " + error.message);
         }
     };
 
-    // 🔥 ЛОГІКА СПИСАННЯ НАГОРОД (Нове)
-    // Знаходимо всі кнопки видалення, які ми щойно намалювали
+    // Видалення нагород
     container.querySelectorAll('.btn-delete-reward').forEach(btn => {
         btn.onclick = async () => {
             const itemName = btn.dataset.name;
             const success = await removeStudentItem(student.uid, itemName);
-            
             if (success) {
-                // Оновлюємо локальний об'єкт інвентаря, щоб екран оновився миттєво
                 const idx = student.profile.inventory.findIndex(i => i.name === itemName);
                 if (idx !== -1) {
                     student.profile.inventory.splice(idx, 1);
-                    renderStudentProfile(student); // Перемальовуємо профіль
+                    renderStudentProfile(student);
                 }
             }
         };
     });
 }
 
+// ==========================================
+// 🎮 ФУНКЦІЯ СКИДАННЯ ВСІХ РІВНІВ
+// ==========================================
+async function resetGameLevels(studentId, studentName) {
+    const isConfirmed = confirm(`Ви хочете закрити ВСІ рівні для учня ${studentName}?\n\nПрогрес всіх тем буде втрачено. Золото та інвентар залишаться.`);
+    
+    if (!isConfirmed) return;
+
+    try {
+        const userRef = doc(db, "users", studentId);
+        await updateDoc(userRef, { 
+            resetLevelProgress: true 
+        });
+        alert(`✅ Успішно! Рівні заблоковані.`);
+    } catch (error) {
+        console.error("Level Reset Error:", error);
+        alert("❌ Помилка: " + error.message);
+    }
+}
 
 // Функція для фізичного видалення предмету з бази даних
 async function removeStudentItem(studentId, itemName) {
@@ -333,19 +384,12 @@ async function removeStudentItem(studentId, itemName) {
             const data = snapshot.data();
             let inventory = data.profile.inventory || [];
 
-            // Шукаємо індекс першого предмета з такою назвою
             const indexToRemove = inventory.findIndex(item => item.name === itemName);
 
             if (indexToRemove !== -1) {
-                // Видаляємо 1 елемент за знайденим індексом
                 inventory.splice(indexToRemove, 1);
-
-                // Оновлюємо базу
-                await updateDoc(studentRef, {
-                    "profile.inventory": inventory
-                });
-                
-                return true; // Успіх
+                await updateDoc(studentRef, { "profile.inventory": inventory });
+                return true; 
             } else {
                 alert("Помилка: Цей предмет вже відсутній у базі.");
                 return false;
@@ -365,7 +409,6 @@ async function renderLevelEditor() {
     const container = document.getElementById("view-tasks"); 
     if (!container) return;
 
-    // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
     container.innerHTML = `
         <div class="page-header-container">
             <h2 class="page-header-title">📝 Конструктор Рівнів</h2>
@@ -561,9 +604,7 @@ async function renderTreasureEditor() {
     const user = getCurrentUser();
     if (!user) return;
 
-    // Функція для повного оновлення екрану
     const refreshEditor = async () => {
-        // 👇 ТУТ БУЛО ЗМІНЕНО HTML ШАПКИ
         container.innerHTML = `
             <div class="page-header-container">
                 <h2 class="page-header-title">💎 Редактор Скарбниці</h2>
@@ -581,12 +622,10 @@ async function renderTreasureEditor() {
             const grid = document.getElementById("treasury-grid-editor");
             grid.innerHTML = ""; 
 
-            // Функція збереження в базу
             const handleSave = async (updatedData) => {
                 await saveShopItems(user.uid, updatedData);
             };
 
-            // Рендер колонок
             renderEditableCategory(grid, "Мікро-нагороди", "micro", shopData, handleSave, "#2ecc71", refreshEditor);
             renderEditableCategory(grid, "Середні нагороди", "medium", shopData, handleSave, "#3498db", refreshEditor);
             renderEditableCategory(grid, "Великі нагороди", "large", shopData, handleSave, "#9b59b6", refreshEditor);
@@ -597,20 +636,16 @@ async function renderTreasureEditor() {
         }
     };
 
-    // Запускаємо перший раз
     refreshEditor();
 }
 
-// Допоміжна функція для рендеру колонки редагування
 function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color, onRefresh) {
     const col = document.createElement("div");
     col.style.cssText = "flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
     
-    // Переконуємось, що масив існує
     if (!fullShopData[categoryKey]) fullShopData[categoryKey] = [];
     const list = fullShopData[categoryKey];
 
-    // Заголовок з лічильником
     col.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
             <h3 style="color: ${color}; margin:0;">${title}</h3>
@@ -618,11 +653,9 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
         </div>
     `;
     
-    // Контейнер для карток
     const cardsContainer = document.createElement("div");
     col.appendChild(cardsContainer);
 
-    // 1. РЕНДЕР ІСНУЮЧИХ ТОВАРІВ
     list.forEach((item, index) => {
         const card = document.createElement("div");
         card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; position: relative;";
@@ -651,16 +684,14 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
             <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
         `;
 
-        // Логіка видалення
         card.querySelector(".btn-delete").onclick = async () => {
             if (confirm(`Видалити "${item.name}"?`)) {
-                list.splice(index, 1); // Видаляємо з масиву
-                await onSave(fullShopData); // Зберігаємо в БД
-                onRefresh(); // Перемальовуємо екран
+                list.splice(index, 1); 
+                await onSave(fullShopData); 
+                onRefresh(); 
             }
         };
 
-        // Логіка локального збереження (редагування)
         const btnSave = card.querySelector(".btn-save");
         btnSave.onclick = async () => {
             const newName = card.querySelector(".inp-name").value;
@@ -672,7 +703,6 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
 
             btnSave.textContent = "⏳";
             
-            // Оновлюємо об'єкт у масиві
             list[index] = { ...item, name: newName, desc: newDesc, price: newPrice };
             
             await onSave(fullShopData);

@@ -3,13 +3,14 @@ import { auth, db } from "./firebase.js";
 import { 
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
-    signOut 
+    signOut,
+    sendEmailVerification // 🔥 Додано для відправки листів
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { 
     doc, 
     setDoc, 
     getDoc,
-    collection, // 🔥 Не забудь ці імпорти для пошуку вчителя
+    collection, 
     query,
     where,
     getDocs
@@ -19,7 +20,6 @@ const TEACHER_KEY = "1"; // Код адміністратора для реєс�
 const STUDENT_DOMAIN = "@math.maze"; // 🔥 Технічний домен для логінів
 
 // --- ДОПОМІЖНА: Транслітерація (Перші 3 букви) ---
-// Робить з "Шевченко" -> "she"
 function getShortTranslit(word) {
     if(!word) return "xxx";
     const a = {"а":"a", "б":"b", "в":"v", "г":"h", "ґ":"g", "д":"d", "е":"e", "є":"ie", "ж":"zh", "з":"z", "и":"y", "і":"i", "ї":"i", "й":"i", "к":"k", "л":"l", "м":"m", "н":"n", "о":"o", "п":"p", "р":"r", "с":"s", "т":"t", "у":"u", "ф":"f", "х":"kh", "ц":"ts", "ч":"ch", "ш":"sh", "щ":"shch", "ь":"", "ю":"iu", "я":"ia"};
@@ -47,9 +47,11 @@ function setError(inputEl, message) {
     if (!err || !err.classList.contains("error-msg")) {
         err = document.createElement("div");
         err.className = "error-msg";
+        err.textContent = message; // textContent швидше і безпечніше
         inputEl.insertAdjacentElement("afterend", err);
+    } else {
+        err.textContent = message;
     }
-    err.textContent = message;
 }
 
 function clearAllErrors(formId) {
@@ -69,15 +71,15 @@ export function initAuth(onLoginSuccess) {
         regSubmitBtn.parentNode.replaceChild(newBtn, regSubmitBtn);
 
         newBtn.addEventListener('click', async (e) => {
-            e.preventDefault(); // Запобігаємо стандартній поведінці форми
+            e.preventDefault(); 
 
-            // --- 🔥 БЛОКУВАННЯ КНОПКИ (Початок) ---
+            // --- БЛОКУВАННЯ КНОПКИ ---
             newBtn.disabled = true;
             const originalText = newBtn.innerText;
             newBtn.innerText = "⏳ Обробка...";
             newBtn.style.opacity = "0.6";
             newBtn.style.cursor = "not-allowed";
-            // ---------------------------------------
+            // -------------------------
 
             clearAllErrors("register-form");
 
@@ -99,7 +101,6 @@ export function initAuth(onLoginSuccess) {
             
             let hasError = false;
 
-            // Функція для розблокування кнопки при помилці валідації
             const unlockButton = () => {
                 newBtn.disabled = false;
                 newBtn.innerText = originalText;
@@ -126,7 +127,6 @@ export function initAuth(onLoginSuccess) {
                     generatedTeacherCode = `${getShortTranslit(surname)}_${getShortTranslit(firstName)}_${rnd}`;
                 }
             } 
-            
             // --- ЛОГІКА УЧНЯ ---
             else {
                 if (!classEl.value) { setError(classEl, "Оберіть клас"); hasError = true; }
@@ -141,7 +141,7 @@ export function initAuth(onLoginSuccess) {
                         
                         if (querySnapshot.empty) {
                             setError(studentTeacherIdEl, "Вчителя з таким ID не знайдено!");
-                            unlockButton(); // 🔥 Розблокуємо, бо це помилка логіки
+                            unlockButton(); 
                             return; 
                         } else {
                             const teacherDoc = querySnapshot.docs[0];
@@ -150,7 +150,7 @@ export function initAuth(onLoginSuccess) {
                     } catch (e) {
                         console.error(e);
                         alert("Помилка перевірки вчителя");
-                        unlockButton(); // 🔥
+                        unlockButton();
                         return;
                     }
 
@@ -160,14 +160,13 @@ export function initAuth(onLoginSuccess) {
                     const rnd = Math.floor(10 + Math.random() * 90);
                     
                     const loginID = `${getShortTranslit(surname)}_${getShortTranslit(firstName)}_${rnd}`;
-                    
                     loginToDisplay = loginID;
                     finalEmail = `${loginID}${STUDENT_DOMAIN}`;
                 }
             }
 
             if (hasError) {
-                unlockButton(); // 🔥 Розблокуємо, якщо є помилки у полях
+                unlockButton();
                 return;
             }
 
@@ -182,10 +181,8 @@ export function initAuth(onLoginSuccess) {
                     email: finalEmail,
                     role: role,
                     className: role === "student" ? classEl.value : "Teacher",
-                    
                     teacherCode: generatedTeacherCode,
                     teacherUid: linkedTeacherUid,
-                    
                     loginID: loginToDisplay,
                     profile: { gold: 2500, inventory: [], welcomeBonusReceived: true, avatar: 'assets/img/base.png' },
                     createdAt: new Date().toISOString()
@@ -193,9 +190,22 @@ export function initAuth(onLoginSuccess) {
 
                 await setDoc(doc(db, "users", user.uid), newUserData);
 
+                // 🔥 ВАЖЛИВО: Логіка підтвердження пошти для ВЧИТЕЛЯ
+                if (role === "teacher") {
+                    await sendEmailVerification(user);
+                    
+                    // Відразу викидаємо, щоб не зайшов без підтвердження
+                    await signOut(auth);
+
+                    alert(`Успішно! Лист для підтвердження надіслано на ${finalEmail}.\n\nБудь ласка, перевірте пошту (і папку Спам) та активуйте акаунт перед входом.`);
+                    
+                    // Перезавантажуємо сторінку, щоб очистити форми і повернути на екран входу
+                    window.location.reload();
+                    return;
+                }
+
+                // --- Логіка успіху для УЧНЯ (без змін) ---
                 console.log("✅ Успіх:", loginToDisplay);
-                
-                // Тут кнопку можна НЕ розблокувати, бо ми ховаємо форму
                 document.getElementById("register-form-content").classList.add("hidden");
                 const successDiv = document.getElementById("register-success");
                 successDiv.classList.remove("hidden");
@@ -203,27 +213,17 @@ export function initAuth(onLoginSuccess) {
                 const successTitle = successDiv.querySelector("h3");
                 const successDesc = document.getElementById("new-login-display");
 
-                if(role === "teacher") {
-                    successTitle.textContent = "Ви зареєстровані!";
-                    successDesc.style.display = "block";
-                    successDesc.innerHTML = `
-                        <p style="color:#aaa;">Ваш ID для учнів:</p>
-                        <h2 style="color:#f1c40f; font-family:monospace; font-size: 2em;">${generatedTeacherCode}</h2>
-                        <p style="color:#fff;">Передайте цей код учням, щоб вони приєдналися до вас.</p>
-                    `;
-                } else {
-                    successTitle.textContent = "Реєстрація успішна!";
-                    successDesc.style.display = "block";
-                    successDesc.innerHTML = `
-                        <p style="color:#aaa;">Твій ЛОГІН для входу:</p>
-                        <h2 style="color:#fff; font-family:monospace; font-size: 2em;">${loginToDisplay}</h2>
-                        <p style="color:#f1c40f;">⚠️ Запиши його! Пароль ти знаєш.</p>
-                    `;
-                }
+                successTitle.textContent = "Реєстрація успішна!";
+                successDesc.style.display = "block";
+                successDesc.innerHTML = `
+                    <p style="color:#aaa;">Твій ЛОГІН для входу:</p>
+                    <h2 style="color:#fff; font-family:monospace; font-size: 2em;">${loginToDisplay}</h2>
+                    <p style="color:#f1c40f;">⚠️ Запиши його! Пароль ти знаєш.</p>
+                `;
 
             } catch (error) {
                 console.error("Reg Error:", error);
-                unlockButton(); // 🔥 ОБОВ'ЯЗКОВО розблокуємо кнопку при помилці Firebase
+                unlockButton();
                 
                 if (error.code === 'auth/email-already-in-use') {
                     alert("Такий користувач вже існує! Спробуйте ще раз.");
@@ -240,9 +240,8 @@ export function initAuth(onLoginSuccess) {
         loginSubmitBtn.parentNode.replaceChild(newLoginBtn, loginSubmitBtn);
 
         newLoginBtn.addEventListener('click', async (e) => {
-            e.preventDefault(); // Запобігаємо перезавантаженню
+            e.preventDefault(); 
 
-             // Можна додати таке саме блокування і для кнопки входу:
             newLoginBtn.disabled = true;
             newLoginBtn.innerText = "Вхід...";
             
@@ -262,15 +261,27 @@ export function initAuth(onLoginSuccess) {
             if (!inputLogin) { setError(emailEl, "Введіть логін або email"); hasEmpty = true; }
             if (!pass) { setError(passEl, "Введіть пароль"); hasEmpty = true; }
             
-            if (hasEmpty) { unlockLogin(); return; } // 🔥
+            if (hasEmpty) { unlockLogin(); return; }
 
+            // Додаємо домен для учнів, якщо введено просто логін
             if (!inputLogin.includes("@")) {
-                inputLogin = inputLogin + STUDENT_DOMAIN; // STUDENT_DOMAIN має бути доступний у scope
+                inputLogin = inputLogin + STUDENT_DOMAIN; 
             }
 
             try {
                 const userCredential = await signInWithEmailAndPassword(auth, inputLogin, pass);
-                const uid = userCredential.user.uid;
+                const user = userCredential.user;
+
+                // 🔥 ПЕРЕВІРКА ПІДТВЕРДЖЕННЯ ПОШТИ
+                // Якщо пошта справжня (не закінчується на домен учня) і не підтверджена
+                if (!user.emailVerified && !user.email.endsWith(STUDENT_DOMAIN)) {
+                    await signOut(auth); // Викидаємо
+                    setError(emailEl, "Ваша пошта не підтверджена! Перевірте скриньку.");
+                    unlockLogin();
+                    return; // Зупиняємо вхід
+                }
+
+                const uid = user.uid;
                 const userDoc = await getDoc(doc(db, "users", uid));
 
                 if (userDoc.exists()) {
@@ -279,14 +290,13 @@ export function initAuth(onLoginSuccess) {
                     emailEl.value = "";
                     passEl.value = "";
                     onLoginSuccess(userData.role);
-                    // Кнопку не розблокуємо, бо переходимо далі
                 } else {
                     setError(emailEl, "Помилка профілю. Зверніться до вчителя.");
-                    unlockLogin(); // 🔥
+                    unlockLogin();
                 }
             } catch (error) {
                 console.error("Login Error:", error.code);
-                unlockLogin(); // 🔥 Розблокування при помилці
+                unlockLogin();
                 
                 if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
                     setError(emailEl, "Невірний логін...");
@@ -321,21 +331,16 @@ export function initAuth(onLoginSuccess) {
 export function renderRegisterForm(role) {
     const isStudent = role === "student";
 
-    // Змінюємо заголовок
     const regTitle = document.querySelector("#screen-register h2");
     if (regTitle) regTitle.innerText = isStudent ? "Реєстрація Учня" : "Реєстрація Вчителя";
 
-    // Допоміжна функція для ховання/показу
     const setVisible = (id, visible) => {
         const el = document.getElementById(id);
         if (el) el.classList.toggle("hidden", !visible);
     };
 
-    // 1. Поля для учня
-    setVisible("select-class-wrapper", isStudent);      // Вибір класу
-    setVisible("student-teacher-id-block", isStudent);  // Поле "Код вчителя"
-
-    // 2. Поля для вчителя
-    setVisible("email-field-group", !isStudent);        // Email
-    setVisible("teacher-key-block", !isStudent);        // Код адміністратора (TEACHER_KEY)
+    setVisible("select-class-wrapper", isStudent); 
+    setVisible("student-teacher-id-block", isStudent); 
+    setVisible("email-field-group", !isStudent); 
+    setVisible("teacher-key-block", !isStudent); 
 }

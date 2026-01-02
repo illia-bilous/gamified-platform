@@ -1,12 +1,14 @@
 import { getCurrentUser } from "./auth.js";
 import { getShopItems, findItemInList } from "./shopData.js";
-import { db } from "./firebase.js";
-import { sendConfigToUnity } from "./gameBridge.js"; 
+import { db } from "./firebase.js"; 
 
 import { 
     collection, 
     query, 
     where, 
+    getDocs, 
+    getDoc, 
+    setDoc, 
     doc, 
     getDoc, 
     setDoc, 
@@ -18,9 +20,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let leaderboardUnsubscribe = null;
-const DEFAULT_AVATAR = 'assets/img/base.png';
-const AVAILABLE_AVATARS = ['assets/img/boy.png', 'assets/img/girl.png'];
 let cachedShopItems = null;
+
+const DEFAULT_AVATAR = 'assets/img/base.png';
+const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
+
+window.currentTopicId = null; 
 
 // ==========================================
 // 🎮 ЗАПУСК UNITY (ВИПРАВЛЕНО)
@@ -33,18 +38,15 @@ export function setupUnityUI() {
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
-        newBtn.onclick = async () => {
-            const user = await getCurrentUser();
-            
-            if (!user || !user.teacherUid) {
-                alert("Помилка: Не знайдено дані учня або вчителя.");
-                return;
-            }
+        newBtn.onclick = () => {
+            const user = getCurrentUser(); // Ваша функція отримання юзера
+            if (!user || !user.teacherUid) return alert("Помилка: Немає ID вчителя.");
 
             if (unityContainer) {
                 unityContainer.classList.remove("hidden");
                 newBtn.style.display = "none";
 
+                // Кнопка закриття
                 if (!document.getElementById("btn-force-close-unity")) {
                     const closeBtn = document.createElement("button");
                     closeBtn.id = "btn-force-close-unity";
@@ -61,55 +63,35 @@ export function setupUnityUI() {
                     iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
                     iframe.id = "unity-iframe"; 
 
-                    // 👇 ОНОВЛЕНИЙ ОБРОБНИК ПОВІДОМЛЕНЬ
+                    // 👇 СПРОЩЕНИЙ ОБРОБНИК
                     const messageHandler = (event) => {
-                        console.log("📨 [RAW MESSAGE]:", event.data);
+                        if (event.source !== iframe.contentWindow) return;
 
-                        if (!event.data) return;
+                        console.log("📨 [JS] Отримано від Unity:", event.data);
 
-                        let msgType = null;
-                        let msgTopic = "Fractions"; 
-                        let msgLevel = 1; // 👈 Додали змінну для рівня (за замовчуванням 1)
-                        let rawData = event.data;
-
-                        // Спроба розпізнати формат
-                        if (typeof rawData === "string") {
-                            try {
-                                if (rawData.startsWith("LEVEL_COMPLETE|")) {
-                                    const jsonPart = rawData.split("|")[1];
-                                    const resultData = JSON.parse(jsonPart);
-                                    console.log("✅ Рівень пройдено (String format):", resultData);
-                                    saveGameResult(resultData, user);
-                                    return;
-                                }
-                                
-                                const parsed = JSON.parse(rawData);
-                                msgType = parsed.type;
-                                if (parsed.topic) msgTopic = parsed.topic;
-                                if (parsed.level) msgLevel = parsed.level; // 👈 Витягуємо рівень з JSON рядка
-                            } catch (e) {
-                                if (rawData === "REQUEST_CONFIG" || rawData === "UNITY_READY") {
-                                    msgType = "REQUEST_CONFIG";
-                                }
-                            }
-                        } else if (typeof rawData === "object") {
-                            msgType = rawData.type;
-                            if (rawData.topic) msgTopic = rawData.topic;
-                            if (rawData.level) msgLevel = rawData.level; // 👈 Витягуємо рівень з об'єкта
-                        }
-
-                        // 2. Обробка запиту конфігурації
-                        if (msgType === "REQUEST_CONFIG" || msgType === "UNITY_READY") {
-                            console.log(`🧐 Unity просить тему: ${msgTopic}, Рівень: ${msgLevel}`);
+                        // 1. Unity просить конфіг (ігноруємо права доступу, просто даємо)
+                        if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
+                            const topicName = event.data.topic || "Fractions";
+                            const levelRequest = event.data.level || 1;
                             
-                            // 🔥 ПЕРЕДАЄМО msgLevel У GAMEBRIDGE
-                            sendConfigToUnity(msgTopic, user.teacherUid, user.uid, msgLevel);
+                            console.log(`🧐 Unity хоче: Тема=${topicName}, Рівень=${levelRequest}`);
+                            
+                            // Викликаємо функцію БЕЗ передачі об'єкта user, лише ID вчителя
+                            fetchAndSendConfig(user.teacherUid, topicName, levelRequest);
                         }
 
-                        // 3. Обробка результату гри
-                        if (msgType === "LEVEL_COMPLETE") {
-                            console.log("✅ Рівень пройдено (Object format):", rawData);
-                            saveGameResult(rawData, user);
+                        // 2. Рівень пройдено
+                        if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
+                            try {
+                                const jsonPart = event.data.split("|")[1];
+                                const resultData = JSON.parse(jsonPart);
+                                
+                                console.log("🏆 Рівень пройдено (зберігаємо в БД):", resultData);
+                                
+                                // Просто зберігаємо в БД, не блокуючи гру
+                                saveGameResult(resultData, user); 
+                                
+                            } catch(e) { console.error("JSON Error:", e); }
                         }
                     };
                     
@@ -140,10 +122,92 @@ export function setupUnityUI() {
 }
 
 // ==========================================
-// 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТУ
+// 📡 ФУНКЦІЯ ВІДПРАВКИ КОНФІГУ
 // ==========================================
-export async function saveGameResult(resultData, user) {
-    if (!user) { console.error("❌ saveGameResult: Немає юзера"); return; }
+// 👇 ПРОСТА ВЕРСІЯ: Ніяких перевірок і заборон. 
+// Просто шукаємо те, що просить Unity.
+async function fetchAndSendConfig(teacherId, topic, level) {
+    console.log(`🔍 [FreeMode] Шукаємо конфіг: Вчитель=${teacherId}, Тема=${topic}, Рівень=${level}`);
+
+    try {
+        const docRef = doc(db, "teacher_configs", teacherId);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+
+            if (data[topic]) {
+                const topicData = data[topic];
+                console.log(`📦 Вміст теми '${topic}':`, topicData);
+
+                let levelData = null;
+
+                // 🛠 ВАРІАНТ 0 (Правильний для вашої структури): Рівні лежать у масиві 'doors'
+                if (topicData.doors && Array.isArray(topicData.doors)) {
+                    console.log("👉 Тип даних: Структура з масивом 'doors'");
+                    
+                    // Спробуємо знайти по ID (якщо у об'єкта є поле id == 1)
+                    levelData = topicData.doors.find(d => d.id == level || d.level == level);
+
+                    // Якщо не знайшли по ID, беремо просто по порядку (Рівень 1 = індекс 0)
+                    if (!levelData && topicData.doors[level - 1]) {
+                        console.log(`⚠️ ID не знайдено, беремо елемент за індексом ${level - 1}`);
+                        levelData = topicData.doors[level - 1];
+                        // Допишемо ID, щоб Unity не сварилась
+                        levelData.id = level; 
+                    }
+                } 
+                // ВАРІАНТ 1: Це просто масив (старі дані)
+                else if (Array.isArray(topicData)) {
+                    levelData = topicData.find(l => l.id == level);
+                } 
+                // ВАРІАНТ 2: Об'єкт по ключу (старі дані)
+                else if (topicData[level]) {
+                    levelData = topicData[level];
+                    if (!levelData.id) levelData.id = level;
+                }
+
+                if (levelData) {
+                    console.log(`✅ Рівень ${level} знайдено! Відправляємо в Unity...`);
+                    
+                    // Формуємо відповідь. Unity чекає об'єкт, де є масив doors
+                    const payload = {
+                        doors: [levelData]
+                    };
+
+                    // Якщо є глобальні налаштування теми (час, нагорода), додамо їх теж, може знадобиться
+                    if (topicData.timeLimit) payload.timeLimit = topicData.timeLimit;
+                    if (topicData.reward) payload.reward = topicData.reward;
+                    
+                    const jsonString = JSON.stringify(payload);
+                    
+                    if (window.unityInstance) {
+                        window.unityInstance.SendMessage('GameManager', 'ReceiveConfig', jsonString);
+                    } else {
+                        const iframe = document.querySelector("#unity-container iframe");
+                        if (iframe && iframe.contentWindow) {
+                             iframe.contentWindow.postMessage(jsonString, "*");
+                        }
+                    }
+                } else {
+                    console.error(`❌ Рівень ${level} не знайдено в масиві doors теми ${topic}.`);
+                }
+            } else {
+                console.error(`❌ Тема ${topic} відсутня у вчителя.`);
+            }
+        } else {
+            console.error("❌ Конфіг вчителя не знайдено в БД.");
+        }
+    } catch (error) {
+        console.error("🔥 Помилка завантаження конфігу:", error);
+    }
+}
+
+// ==========================================
+// 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
+// ==========================================
+async function saveGameResult(resultData, user) {
+    if (!user) return;
     try {
         const score = Number(resultData.score || 0);
         const topic = resultData.topic || "Unknown";
@@ -159,39 +223,6 @@ export async function saveGameResult(resultData, user) {
             topic: topic, level: level, score: score, mistakes: resultData.mistakes || 0,
             timeSpent: resultData.timeSpent || 0, timestamp: serverTimestamp(), win: score > 0 
         });
-
-        const statsRef = doc(db, "game_results", user.uid);
-        const statsSnap = await getDoc(statsRef);
-        let statsData = statsSnap.exists() ? statsSnap.data() : { topics: {} };
-        if (!statsData.topics) statsData.topics = {};
-        
-        const currentStats = statsData.topics[topic] || { bestScore: 0, attempts: 0, level: 1 };
-        
-        // Логіка відкриття нових рівнів
-        let newLevel = Number(currentStats.level || 1);
-        if (score > 0 && level >= newLevel) {
-            newLevel = level + 1;
-        }
-
-        const updates = {
-            [`topics.${topic}.lastScore`]: score,
-            [`topics.${topic}.bestScore`]: Math.max((currentStats.bestScore || 0), score),
-            [`topics.${topic}.attempts`]: (currentStats.attempts || 0) + 1,
-            [`topics.${topic}.lastPlayed`]: new Date().toISOString(),
-            [`topics.${topic}.maxPossibleScore`]: maxScore,
-            [`topics.${topic}.level`]: newLevel,
-            "studentName": user.displayName || "Учень",
-            "classId": user.classId || ""
-        };
-
-        if (!statsSnap.exists()) {
-            await setDoc(statsRef, { 
-                studentId: user.uid,
-                topics: { [topic]: { lastScore: score, bestScore: score, attempts: 1, lastPlayed: new Date().toISOString(), maxPossibleScore: maxScore, level: (score > 0 ? 2 : 1) } }
-            });
-        } else {
-            await updateDoc(statsRef, updates);
-        }
 
         const goldDisplay = document.getElementById("student-gold-display");
         if(goldDisplay) {
@@ -280,8 +311,16 @@ function renderInventory(currentUser) {
     const listEl = document.getElementById("student-inventory-list");
     if (!listEl) return;
     const userInv = currentUser.profile.inventory || [];
-    if (userInv.length === 0) { listEl.innerHTML = '<li class="empty-msg" style="width:100%; text-align:center;">Поки що пусто...</li>'; listEl.style.display = "block"; return; }
-    listEl.className = "treasury-grid"; listEl.style.display = "flex"; listEl.innerHTML = "";
+    if (userInv.length === 0) {
+        listEl.innerHTML = '<li class="empty-msg" style="width:100%; text-align:center;">Поки що пусто...</li>';
+        listEl.style.display = "block";
+        return;
+    }
+
+    listEl.className = "treasury-grid";
+    listEl.style.display = "flex";
+    listEl.innerHTML = "";
+
     const shopDB = cachedShopItems || { micro: [], medium: [], large: [] };
     const createColumn = (title, dbItems) => {
         const safeItems = dbItems || [];
@@ -291,18 +330,53 @@ function renderInventory(currentUser) {
             const count = userInv.filter(uItem => uItem.name === shopItem.name).length;
             contentHtml += `<div class="inventory-card-item"><div class="inv-name">${shopItem.name} <span class="item-count">x${count}</span></div><div class="inv-desc">${shopItem.desc}</div></div>`;
         });
-        return `<div class="reward-column"><div class="section-sub-header">${title}</div><div class="inventory-column-content">${contentHtml}</div></div>`;
+        
+        return `
+            <div class="reward-column">
+                <div class="section-sub-header">${title}</div>
+                <div class="inventory-column-content">${contentHtml}</div>
+            </div>`;
     };
     listEl.innerHTML += createColumn("Мої Мікро-нагороди", shopDB.micro);
     listEl.innerHTML += createColumn("Мої Середні нагороди", shopDB.medium);
     listEl.innerHTML += createColumn("Мої Великі нагороди", shopDB.large);
 }
 
+// ==========================================
+// 🏆 ЛІДЕРБОРД
+// ==========================================
 function renderLeaderboard(currentUser) {
     const container = document.getElementById("view-leaderboard");
     if (!container) return;
-    if (leaderboardUnsubscribe) { leaderboardUnsubscribe(); leaderboardUnsubscribe = null; }
-    container.innerHTML = `<div class="page-header-container"><h2 class="page-header-title">🏆 Рейтинг Класу ${currentUser.className || ""}</h2><div class="page-header-line"></div><p class="page-header-description">Змагайтеся з однокласниками!</p></div><div style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 10px; min-height: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);"><table class="leaderboard-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;"><thead><tr style="color: #ccc; text-align: left; text-transform: uppercase; font-size: 0.9em;"><th style="padding: 10px 20px;">#</th><th style="width: 50%;">Учень</th><th style="width: 30%;">Золото</th></tr></thead><tbody id="leaderboard-body"><tr><td colspan="3" style="text-align:center; color:#777; padding: 30px;">Завантаження... ⏳</td></tr></tbody></table></div>`;
+
+    if (leaderboardUnsubscribe) {
+        leaderboardUnsubscribe();
+        leaderboardUnsubscribe = null;
+    }
+
+    container.innerHTML = `
+        <div class="page-header-container">
+            <h2 class="page-header-title">🏆 Рейтинг Класу ${currentUser.className || ""}</h2>
+            <div class="page-header-line"></div>
+            <p class="page-header-description">Змагайтеся з однокласниками! Рейтинг оновлюється в реальному часі.</p>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 10px; min-height: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <table class="leaderboard-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
+                <thead>
+                    <tr style="color: #ccc; text-align: left; text-transform: uppercase; font-size: 0.9em;">
+                        <th style="padding: 10px 20px;">#</th>
+                        <th style="width: 50%;">Учень</th> 
+                        <th style="width: 30%;">Золото</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body">
+                    <tr><td colspan="3" style="text-align:center; color:#777; padding: 30px;">Завантаження рейтингу... ⏳</td></tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+
     const tbody = document.getElementById("leaderboard-body");
     const q = query(collection(db, "users"), where("role", "==", "student"), where("className", "==", currentUser.className), where("teacherUid", "==", currentUser.teacherUid));
     leaderboardUnsubscribe = onSnapshot(q, (snapshot) => {
@@ -321,6 +395,9 @@ function renderLeaderboard(currentUser) {
     });
 }
 
+// ==========================================
+// 🛠️ СИСТЕМНІ ФУНКЦІЇ (ОНОВЛЕНО!)
+// ==========================================
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
@@ -341,9 +418,40 @@ async function saveUserData(user) {
     if (user.uid) await updateDoc(doc(db, "users", user.uid), { profile: user.profile });
 }
 
+// 🔥 ОНОВЛЕНО: ТЕПЕР СЛУХАЄ КОМАНДУ НА "BOMB" (СКИДАННЯ)
 function startLiveGoldTracker(userId) {
-    onSnapshot(doc(db, "users", userId), (docSnap) => {
+    console.log("📡 Запущено живий трекер + слухач скидання...");
+    const userRef = doc(db, "users", userId);
+    
+    onSnapshot(userRef, async (docSnap) => {
         if (docSnap.exists()) {
+            const freshData = docSnap.data();
+
+            // 🛑 === ЛОГІКА HARD RESET (CLEAR DATA) === 🛑
+            if (freshData.needReset === true) {
+                console.warn("🧨 Вчитель активував повне скидання (бомбу)!");
+                
+                // 1. Знімаємо прапорець у базі, щоб не зациклилось
+                await updateDoc(userRef, { needReset: false });
+                
+                // 2. Видаляємо Unity DB (це і є Clear Data)
+                const req = indexedDB.deleteDatabase("/idbfs");
+                
+                req.onsuccess = () => {
+                    console.log("✅ База Unity видалена.");
+                    alert("УВАГА: Вчитель повністю скинув ваш ігровий прогрес.");
+                    // 3. Перезавантажуємо сторінку
+                    location.reload();
+                };
+                
+                req.onerror = () => {
+                    console.error("❌ Не вдалося видалити базу.");
+                    alert("Спроба скидання не вдалася. Спробуйте очистити кеш вручну.");
+                };
+                return; // Виходимо, далі нічого не оновлюємо
+            }
+            // ============================================
+
             let user = getCurrentUser();
             user.profile = docSnap.data().profile;
             localStorage.setItem("currentUser", JSON.stringify(user));
@@ -368,4 +476,29 @@ export async function initStudentPanel() {
     setupUnityUI();
 }
 
-window.saveGameResult = saveGameResult;
+// ==========================================
+// 🛠️ АДМІН-ФУНКЦІЇ (Для тесту через консоль)
+// ==========================================
+
+// 1. Просто заборонити рівень (Soft Reset)
+window.resetStudentLevel = async (studentId, topic, newLevel) => {
+    try {
+        const userRef = doc(db, "users", studentId);
+        await setDoc(userRef, {
+            progress: {
+                [topic]: { maxAllowedLevel: newLevel }
+            }
+        }, { merge: true });
+        console.log(`✅ Soft Reset: maxLevel -> ${newLevel}`);
+    } catch (e) { console.error(e); }
+};
+
+// 2. ПОВНЕ СКИДАННЯ (Hard Reset / Bomb)
+window.adminHardReset = async (studentId) => {
+    try {
+        const userRef = doc(db, "users", studentId);
+        // Ставимо мітку, яку зловить startLiveGoldTracker
+        await updateDoc(userRef, { needReset: true });
+        console.log(`💣 Hard Reset: Відправлено команду знищення даних учню ${studentId}`);
+    } catch (e) { console.error(e); }
+};
