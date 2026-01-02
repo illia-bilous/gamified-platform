@@ -62,35 +62,37 @@ export function setupUnityUI() {
 
                     // 👇 СПРОЩЕНИЙ ОБРОБНИК
                     const messageHandler = (event) => {
-                        if (event.source !== iframe.contentWindow) return;
+                    if (event.source !== iframe.contentWindow) return;
 
-                        console.log("📨 [JS] Отримано від Unity:", event.data);
+                    console.log("📨 [JS] Отримано від Unity:", event.data);
 
-                        // 1. Unity просить конфіг (ігноруємо права доступу, просто даємо)
-                        if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
-                            const topicName = event.data.topic || "Fractions";
-                            const levelRequest = event.data.level || 1;
+                    // 1. Unity просить конфіг
+                    if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
+                        const topicName = event.data.topic || "Fractions";
+                        const levelRequest = event.data.level || 1;
+                        
+                        console.log(`🧐 Unity хоче: Тема=${topicName}, Рівень=${levelRequest}`);
+                        fetchAndSendConfig(user.teacherUid, topicName, levelRequest);
+                    }
+
+                    // 2. Рівень пройдено
+                    else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
+                        try {
+                            const jsonPart = event.data.split("|")[1];
+                            const resultData = JSON.parse(jsonPart);
                             
-                            console.log(`🧐 Unity хоче: Тема=${topicName}, Рівень=${levelRequest}`);
+                            console.log("🏆 Рівень пройдено (зберігаємо в БД):", resultData);
+                            saveGameResult(resultData, user); 
                             
-                            // Викликаємо функцію БЕЗ передачі об'єкта user, лише ID вчителя
-                            fetchAndSendConfig(user.teacherUid, topicName, levelRequest);
-                        }
+                        } catch(e) { console.error("JSON Error:", e); }
+                    }
 
-                        // 2. Рівень пройдено
-                        if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
-                            try {
-                                const jsonPart = event.data.split("|")[1];
-                                const resultData = JSON.parse(jsonPart);
-                                
-                                console.log("🏆 Рівень пройдено (зберігаємо в БД):", resultData);
-                                
-                                // Просто зберігаємо в БД, не блокуючи гру
-                                saveGameResult(resultData, user); 
-                                
-                            } catch(e) { console.error("JSON Error:", e); }
-                        }
-                    };
+                    // 🔥 3. ДОДАНО: ОБРОБКА КНОПКИ ВИХІД З UNITY 🔥
+                    else if (event.data && event.data.type === "CLOSE_GAME") {
+                        console.log("🛑 Unity попросило закрити гру.");
+                        window.closeUnityGame(); // Викликаємо твою існуючу функцію закриття
+                    }
+                };
                     
                     window.addEventListener("message", messageHandler);
                     iframe._handler = messageHandler; 
@@ -124,79 +126,93 @@ export function setupUnityUI() {
 // 👇 ПРОСТА ВЕРСІЯ: Ніяких перевірок і заборон. 
 // Просто шукаємо те, що просить Unity.
 async function fetchAndSendConfig(teacherId, topic, level) {
-    console.log(`🔍 [FreeMode] Шукаємо конфіг: Вчитель=${teacherId}, Тема=${topic}, Рівень=${level}`);
+    if (!teacherId) {
+        console.error("❌ fetchAndSendConfig: Немає teacherId!");
+        return;
+    }
+
+    console.log(`🔍 [JS] Шукаємо дані: Вчитель=${teacherId}, Тема=${topic}, Рівень=${level}`);
 
     try {
         const docRef = doc(db, "teacher_configs", teacherId);
         const docSnap = await getDoc(docRef);
 
+        let finalQuestion = "2 + 2";
+        let finalAnswer = "4";
+        let finalTime = 60;
+        let finalReward = 50;
+
         if (docSnap.exists()) {
             const data = docSnap.data();
-
+            
+            // Перевіряємо, чи є така тема
             if (data[topic]) {
                 const topicData = data[topic];
-                console.log(`📦 Вміст теми '${topic}':`, topicData);
+                
+                // Встановлюємо загальні налаштування теми (якщо є)
+                if (topicData.timeLimit) finalTime = Number(topicData.timeLimit);
+                if (topicData.reward) finalReward = Number(topicData.reward);
 
+                // Шукаємо конкретний рівень
                 let levelData = null;
-
-                // 🛠 ВАРІАНТ 0 (Правильний для вашої структури): Рівні лежать у масиві 'doors'
+                
+                // Якщо структура з масивом 'doors'
                 if (topicData.doors && Array.isArray(topicData.doors)) {
-                    console.log("👉 Тип даних: Структура з масивом 'doors'");
-                    
-                    // Спробуємо знайти по ID (якщо у об'єкта є поле id == 1)
+                    // Шукаємо по ID або по порядку
                     levelData = topicData.doors.find(d => d.id == level || d.level == level);
-
-                    // Якщо не знайшли по ID, беремо просто по порядку (Рівень 1 = індекс 0)
                     if (!levelData && topicData.doors[level - 1]) {
-                        console.log(`⚠️ ID не знайдено, беремо елемент за індексом ${level - 1}`);
                         levelData = topicData.doors[level - 1];
-                        // Допишемо ID, щоб Unity не сварилась
-                        levelData.id = level; 
                     }
                 } 
-                // ВАРІАНТ 1: Це просто масив (старі дані)
+                // Якщо стара структура (масив об'єктів)
                 else if (Array.isArray(topicData)) {
                     levelData = topicData.find(l => l.id == level);
-                } 
-                // ВАРІАНТ 2: Об'єкт по ключу (старі дані)
-                else if (topicData[level]) {
-                    levelData = topicData[level];
-                    if (!levelData.id) levelData.id = level;
                 }
 
+                // Якщо знайшли дані рівня - перезаписуємо
                 if (levelData) {
-                    console.log(`✅ Рівень ${level} знайдено! Відправляємо в Unity...`);
-                    
-                    // Формуємо відповідь. Unity чекає об'єкт, де є масив doors
-                    const payload = {
-                        doors: [levelData]
-                    };
-
-                    // Якщо є глобальні налаштування теми (час, нагорода), додамо їх теж, може знадобиться
-                    if (topicData.timeLimit) payload.timeLimit = topicData.timeLimit;
-                    if (topicData.reward) payload.reward = topicData.reward;
-                    
-                    const jsonString = JSON.stringify(payload);
-                    
-                    if (window.unityInstance) {
-                        window.unityInstance.SendMessage('GameManager', 'ReceiveConfig', jsonString);
-                    } else {
-                        const iframe = document.querySelector("#unity-container iframe");
-                        if (iframe && iframe.contentWindow) {
-                             iframe.contentWindow.postMessage(jsonString, "*");
-                        }
-                    }
+                    if (levelData.question) finalQuestion = levelData.question;
+                    if (levelData.answer) finalAnswer = String(levelData.answer); // Важливо: перетворюємо в рядок
+                    if (levelData.reward) finalReward = Number(levelData.reward); // Пріоритет нагороди рівня
+                    if (levelData.timeLimit) finalTime = Number(levelData.timeLimit);
                 } else {
-                    console.error(`❌ Рівень ${level} не знайдено в масиві doors теми ${topic}.`);
+                    console.warn(`⚠️ Рівень ${level} не знайдено, використовую дефолт.`);
                 }
-            } else {
-                console.error(`❌ Тема ${topic} відсутня у вчителя.`);
             }
-        } else {
-            console.error("❌ Конфіг вчителя не знайдено в БД.");
         }
+
+        // 🔥 ФОРМУВАННЯ ПАКЕТУ ДЛЯ UNITY 🔥
+        const simplePayload = {
+            question: finalQuestion,
+            answer: finalAnswer,
+            time: finalTime,
+            reward: finalReward
+        };
+
+        const jsonString = JSON.stringify(simplePayload);
+        console.log("🚀 [JS -> Unity] Відправляю JSON:", jsonString);
+
+        // 👇 ОНОВЛЕНА ЛОГІКА ВІДПРАВКИ 👇
+        const iframe = document.querySelector("#unity-container iframe");
+        
+        // Спроба 1: Якщо ми на тій же сторінці (без iframe)
+        if (window.unityInstance) {
+            window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', jsonString);
+        } 
+        // Спроба 2: Якщо гра в Iframe (найімовірніше твій випадок)
+        else if (iframe && iframe.contentWindow) {
+            // Спробуємо знайти unityInstance всередині iframe
+            if (iframe.contentWindow.unityInstance) {
+                 iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', jsonString);
+            } else {
+                // Якщо не знайшли instance, шлемо postMessage (але це вимагає скрипта в index.html)
+                // Для надійності краще використовувати варіант вище, але залишаємо це як резерв
+                iframe.contentWindow.postMessage(jsonString, "*");
+            }
+        }
+
     } catch (error) {
-        console.error("🔥 Помилка завантаження конфігу:", error);
+        console.error("🔥 Error in fetchAndSendConfig:", error);
     }
 }
 

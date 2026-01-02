@@ -23,40 +23,15 @@
         <div id="unity-build-title">MathMaze</div>
       </div>
     </div>
-
     <script>
-      var unityInstance = null;
-      var gameInstance = null;
-    </script>
-
-    <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-      import { getFirestore, doc, getDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-      const firebaseConfig = {
-        apiKey: "AIzaSyDM5N2KjctWbKKtY1bP0bde5kaNxqDExbI",
-        authDomain: "mathmaze-d57fb.firebaseapp.com",
-        projectId: "mathmaze-d57fb",
-        storageBucket: "mathmaze-d57fb.firebasestorage.app",
-        messagingSenderId: "981708916474",
-        appId: "1:981708916474:web:b050824643314771e2eb43",
-        measurementId: "G-N9TKW7269V"
-      };
-
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const userId = urlParams.get('uid');
-
-      if(userId) console.log("✅ Визначено ID учня:", userId);
-
-      // --- UNITY CODE ---
       var canvas = document.querySelector("#unity-canvas");
 
-      // Змінна для збереження гри глобально
-      var myGameInstance = null;
-
+      // Shows a temporary message banner/ribbon for a few seconds, or
+      // a permanent error message on top of the canvas if type=='error'.
+      // If type=='warning', a yellow highlight color is used.
+      // Modify or remove this function to customize the visually presented
+      // way that non-critical warnings and error messages are presented to the
+      // user.
       function unityShowBanner(msg, type) {
         var warningBanner = document.querySelector("#unity-warning");
         function updateBannerVisibility() {
@@ -88,16 +63,47 @@
         productName: "MathMaze",
         productVersion: "1.0",
         showBanner: unityShowBanner,
+        // errorHandler: function(err, url, line) {
+        //    alert("error " + err + " occurred at line " + line);
+        //    // Return 'true' if you handled this error and don't want Unity
+        //    // to process it further, 'false' otherwise.
+        //    return true;
+        // },
       };
 
+      // By default, Unity keeps WebGL canvas render target size matched with
+      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+      // Set this to false if you want to decouple this synchronization from
+      // happening inside the engine, and you would instead like to size up
+      // the canvas DOM size and WebGL render target sizes yourself.
+      // config.matchWebGLToCanvasSize = false;
+
+      // If you would like all file writes inside Unity Application.persistentDataPath
+      // directory to automatically persist so that the contents are remembered when
+      // the user revisits the site the next time, uncomment the following line:
+      // config.autoSyncPersistentDataPath = true;
+      // This autosyncing is currently not the default behavior to avoid regressing
+      // existing user projects that might rely on the earlier manual
+      // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
+      // expected to change.
+
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Mobile device style: fill the whole browser client area with the game canvas:
+
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
         document.getElementsByTagName('head')[0].appendChild(meta);
         document.querySelector("#unity-container").className = "unity-mobile";
         canvas.className = "unity-mobile";
+
+        // To lower canvas resolution on mobile devices to gain some
+        // performance, uncomment the following line:
+        // config.devicePixelRatio = 1;
+
+
       } else {
+        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
         canvas.style.width = "960px";
         canvas.style.height = "600px";
       }
@@ -109,54 +115,19 @@
       script.onload = () => {
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-        })
-        .then((instance) => {
-          
-          // 🔥🔥🔥 ВИПРАВЛЕННЯ: Присвоюємо значення глобальним змінним 🔥🔥🔥
-          unityInstance = instance;
-          gameInstance = instance;
-          window.unityInstance = instance; // Для страховки
-          
-          console.log("🚀 UNITY АБСОЛЮТНО ГОТОВА! (unityInstance is set globally)");
+              }).then((unityInstance) => {
+                document.querySelector("#unity-loading-bar").style.display = "none";
+                document.querySelector("#unity-fullscreen-button").onclick = () => {
+                  unityInstance.SetFullscreen(1);
+                };
 
-          // 👇👇👇 ДОДАЙТЕ ЦЕЙ БЛОК 👇👇👇
-          window.addEventListener("message", (event) => {
-            // Перевіряємо, чи це повідомлення з конфігом
-            if (event.data && event.data.type === "SET_UNITY_CONFIG") {
-                console.log("📥 [Unity HTML] Отримано конфіг через postMessage, передаємо в гру...");
-                
-                // instance тут доступний напряму, нам не потрібен window.unityInstance
-                instance.SendMessage("GameManager", "SetLevelConfig", event.data.payload);
-            }
-          });
-          // 👆👆👆 КІНЕЦЬ БЛОКУ 👆👆👆
-
-          document.querySelector("#unity-loading-bar").style.display = "none";
-
-          document.querySelector("#unity-loading-bar").style.display = "none";
-          document.querySelector("#unity-fullscreen-button").onclick = () => {
-            instance.SetFullscreen(1);
-          };
-
-          if (userId) {
-              const userRef = doc(db, "users", userId);
-              getDoc(userRef).then((snapshot) => {
-                  if (snapshot.exists()) {
-                      const data = snapshot.data();
-                      if (data.resetTopicCommand) {
-                          instance.SendMessage("GameManager", "ResetTopicFromJS", data.resetTopicCommand);
-                          updateDoc(userRef, { resetTopicCommand: deleteField() });
-                      }
-                  }
-              }).catch((err) => console.error("Помилка Firebase:", err));
-          }
-
-        }).catch((message) => {
-          alert(message);
-        });
-      };
+              }).catch((message) => {
+                alert(message);
+              });
+            };
 
       document.body.appendChild(script);
+
     </script>
   </body>
 </html>
