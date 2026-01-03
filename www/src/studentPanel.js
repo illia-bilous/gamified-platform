@@ -137,10 +137,13 @@ async function fetchAndSendConfig(teacherId, topic, level) {
         const docRef = doc(db, "teacher_configs", teacherId);
         const docSnap = await getDoc(docRef);
 
+        // 1. ОГОЛОШУЄМО ЗМІННІ ТУТ (Щоб вони були видимі всюди)
         let finalQuestion = "2 + 2";
         let finalAnswer = "4";
         let finalTime = 60;
         let finalReward = 50;
+        // 👇 ОГОЛОШУЄМО МАСИВ ЗАЗДАЛЕГІДЬ!
+        let finalWrongAnswers = ["1", "2", "3", "5"]; 
 
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -149,22 +152,16 @@ async function fetchAndSendConfig(teacherId, topic, level) {
             if (data[topic]) {
                 const topicData = data[topic];
                 
-                // Встановлюємо загальні налаштування теми (якщо є)
+                // Налаштування теми
                 if (topicData.timeLimit) finalTime = Number(topicData.timeLimit);
                 if (topicData.reward) finalReward = Number(topicData.reward);
 
                 // Шукаємо конкретний рівень
                 let levelData = null;
                 
-                // Якщо структура з масивом 'doors'
                 if (topicData.doors && Array.isArray(topicData.doors)) {
-                    // Шукаємо по ID або по порядку
                     levelData = topicData.doors.find(d => d.id == level || d.level == level);
-                    if (!levelData && topicData.doors[level - 1]) {
-                        levelData = topicData.doors[level - 1];
-                    }
                 } 
-                // Якщо стара структура (масив об'єктів)
                 else if (Array.isArray(topicData)) {
                     levelData = topicData.find(l => l.id == level);
                 }
@@ -172,9 +169,14 @@ async function fetchAndSendConfig(teacherId, topic, level) {
                 // Якщо знайшли дані рівня - перезаписуємо
                 if (levelData) {
                     if (levelData.question) finalQuestion = levelData.question;
-                    if (levelData.answer) finalAnswer = String(levelData.answer); // Важливо: перетворюємо в рядок
-                    if (levelData.reward) finalReward = Number(levelData.reward); // Пріоритет нагороди рівня
+                    if (levelData.answer) finalAnswer = String(levelData.answer);
+                    if (levelData.reward) finalReward = Number(levelData.reward);
                     if (levelData.timeLimit) finalTime = Number(levelData.timeLimit);
+                    
+                    // 👇 ЯКЩО В БАЗІ Є НЕПРАВИЛЬНІ ВІДПОВІДІ - БЕРЕМО ЇХ
+                    if (levelData.wrongAnswers && Array.isArray(levelData.wrongAnswers) && levelData.wrongAnswers.length > 0) {
+                        finalWrongAnswers = levelData.wrongAnswers;
+                    }
                 } else {
                     console.warn(`⚠️ Рівень ${level} не знайдено, використовую дефолт.`);
                 }
@@ -185,6 +187,7 @@ async function fetchAndSendConfig(teacherId, topic, level) {
         const simplePayload = {
             question: finalQuestion,
             answer: finalAnswer,
+            wrongAnswers: finalWrongAnswers, // Тепер ця змінна точно існує
             time: finalTime,
             reward: finalReward
         };
@@ -192,21 +195,16 @@ async function fetchAndSendConfig(teacherId, topic, level) {
         const jsonString = JSON.stringify(simplePayload);
         console.log("🚀 [JS -> Unity] Відправляю JSON:", jsonString);
 
-        // 👇 ОНОВЛЕНА ЛОГІКА ВІДПРАВКИ 👇
+        // 👇 ВІДПРАВКА В UNITY
         const iframe = document.querySelector("#unity-container iframe");
         
-        // Спроба 1: Якщо ми на тій же сторінці (без iframe)
         if (window.unityInstance) {
             window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', jsonString);
         } 
-        // Спроба 2: Якщо гра в Iframe (найімовірніше твій випадок)
         else if (iframe && iframe.contentWindow) {
-            // Спробуємо знайти unityInstance всередині iframe
-            if (iframe.contentWindow.unityInstance) {
+             if (iframe.contentWindow.unityInstance) {
                  iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', jsonString);
             } else {
-                // Якщо не знайшли instance, шлемо postMessage (але це вимагає скрипта в index.html)
-                // Для надійності краще використовувати варіант вище, але залишаємо це як резерв
                 iframe.contentWindow.postMessage(jsonString, "*");
             }
         }
