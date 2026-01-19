@@ -421,7 +421,7 @@ async function renderLevelEditor() {
                 <select id="editor-topic" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="Fractions">Тема: Дроби</option>
                     <option value="Powers">Тема: Степені</option>
-                    <option value="Equations">Тема: Рівняння</option>
+                    <option value="Quadratics">Тема: Рівняння</option>
                 </select>
                 <select id="editor-level" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="1">Рівень 1 (Легкий)</option>
@@ -548,11 +548,10 @@ function setupLevelEditorLogic() {
             const docRef = doc(db, "teacher_configs", user.uid);
             const docSnap = await getDoc(docRef);
             let currentData = docSnap.exists() ? docSnap.data() : {};
-
+            let topicData = currentData[topic] || { doors: [] };
+            let doors = topicData.doors || [];
             // Створюємо тему, якщо її немає
-            if (!currentData[topic]) {
-                currentData[topic] = { doors: [] };
-            }
+            if (!Array.isArray(doors)) doors = [];
 
             // 🔥 ВИПРАВЛЕННЯ: Формуємо об'єкт рівня з reward і timeLimit
             const doorData = {
@@ -564,10 +563,6 @@ function setupLevelEditorLogic() {
                 timeLimit: parseInt(timeInput.value) || 120   // <--- І ТУТ
             };
 
-            // Отримуємо поточний масив дверей
-            let doors = currentData[topic].doors || [];
-            if (!Array.isArray(doors)) doors = []; // Захист від глюків
-
             // Шукаємо, чи є вже такий рівень, щоб оновити його
             const index = doors.findIndex(d => d.id === levelNum);
             
@@ -577,16 +572,12 @@ function setupLevelEditorLogic() {
                 doors.push(doorData);    // Додаємо новий
             }
 
-            // Записуємо назад у тему
-            currentData[topic].doors = doors;
-            
-            // (Опціонально) Можна прибрати запис reward у корінь теми, 
-            // щоб не плутати базу даних, або залишити як дефолтне значення.
-            // Я залишаю це чистим — дані тепер тільки в doors.
+            await setDoc(docRef, { 
+                [topic]: { doors: doors } 
+            }, { merge: true });
 
-            await setDoc(docRef, currentData);
-            
-            statusText.textContent = "✅ Збережено для гри!";
+            statusText.textContent = `✅ Збережено в тему "${topic}"!`;
+    
         } catch (e) {
             console.error("Помилка Firebase:", e);
             statusText.textContent = "❌ Помилка збереження.";

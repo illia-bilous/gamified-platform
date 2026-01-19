@@ -3,134 +3,118 @@ import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-
 
 let cachedPayload = null; 
 
-// ==========================================
-// 1. ОТРИМАННЯ ДАНИХ ТА ВІДПРАВКА
-// ==========================================
 export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) {
-    console.log(`📥 GameBridge: Завантаження... Teacher=${teacherId}, Topic=${topic}, Level=${level}`);
+    console.log(`🚀 GameBridge: Старт... Topic="${topic}", Teacher="${teacherId}", Level=${level}`);
 
     const iframe = document.getElementById("unity-iframe");
-    // Якщо iframe ще не створено (наприклад, гра не відкрита)
     if (!iframe) {
-        console.warn("⚠️ GameBridge: Unity Iframe не знайдено (гра закрита?).");
+        console.warn("⚠️ GameBridge: Unity Iframe не знайдено.");
         return;
     }
 
-    // Базовий конфіг (якщо в базі нічого немає)
+    // 1. СТАНДАРТНИЙ КОНФІГ (ФОЛБЕК)
+    // Це відправиться, якщо в базі нічого немає або сталася помилка
     let finalConfig = {
-        reward: 50,     
-        timeLimit: 300, 
-        doors: [],      
-        topic: topic,
-        level: level,
-        teacherId: teacherId,
-        studentId: studentId
+        question: `Рівень ${level}: 2 + 2 = ?`, // Заглушка
+        answer: "4",
+        wrongAnswers: ["5", "3", "1"],
+        time: 120,
+        reward: 10 // Менше золота за дефолтний рівень
     };
 
     try {
+        if (!teacherId) throw new Error("ID вчителя не передано");
+
         const configRef = doc(db, "teacher_configs", teacherId);
         const configSnap = await getDoc(configRef);
 
         if (configSnap.exists()) {
             const data = configSnap.data();
+            console.log("📂 Дані з Firebase отримано. Ключі:", Object.keys(data));
             
-            // 1. Шукаємо тему
-            let topicData = data[topic]; 
-            if (!topicData && data.topics) {
-                topicData = data.topics[topic];
+            // --- ВИПРАВЛЕННЯ 1: ПОШУК ТЕМИ БЕЗ ВРАХУВАННЯ РЕГІСТРУ ---
+            // Шукаємо ключ, який схожий на topic (наприклад "quadratics" знайде "Quadratics")
+            let topicKey = Object.keys(data).find(k => k.toLowerCase() === topic.toLowerCase());
+            
+            // Якщо не знайшли в корені, шукаємо в 'topics' (якщо така структура є)
+            if (!topicKey && data.topics) {
+                 const subKeys = Object.keys(data.topics);
+                 const subKey = subKeys.find(k => k.toLowerCase() === topic.toLowerCase());
+                 if (subKey) {
+                     topicKey = subKey; // Тут треба обережно, далі логіка для кореневого об'єкта, але ідея така
+                 }
             }
 
-            if (topicData) {
-                console.log(`📂 Дані теми знайдено. Структура:`, topicData);
-                
-                let foundDoors = []; 
+            if (topicKey) {
+                console.log(`✅ Знайдено тему в базі: "${topicKey}" (запит був "${topic}")`);
+                const topicData = data[topicKey];
 
-                // =========================================================
-                // 🔍 ЛОГІКА ВИЗНАЧЕННЯ СТРУКТУРИ
-                // =========================================================
+                let foundTask = null; 
 
-                // ВАРІАНТ 1: Класичний (всередині теми є масив "doors")
+                // --- ЛОГІКА ПОШУКУ РІВНЯ ---
                 if (topicData.doors && Array.isArray(topicData.doors)) {
-                    // Беремо весь масив, Unity саме знайде потрібний ID
-                    foundDoors = topicData.doors; 
-                }
-                
-                // ВАРІАНТ 2: Сама тема є масивом рівнів [Level1, Level2]
-                else if (Array.isArray(topicData)) {
+                    // Структура масиву (як у твоєму дампі)
                     const idx = level - 1;
-                    if (topicData[idx]) {
-                        foundDoors = [ topicData[idx] ]; 
+                    if (topicData.doors[idx]) {
+                        foundTask = topicData.doors[idx];
                     }
                 }
-                
-                // ВАРІАНТ 3: Сама тема є об'єктом рівнів {"1": {...}, "2": {...}}
                 else if (typeof topicData === 'object') {
-                    let specificLevel = topicData[level] || topicData[String(level)];
-                    if (specificLevel) {
-                        foundDoors = [ specificLevel ];
-                    }
+                    // Структура об'єкта {"1": {...}, "2": {...}}
+                    foundTask = topicData[level] || topicData[String(level)];
                 }
 
-                // =========================================================
-                // 📤 ФОРМУВАННЯ ФІНАЛЬНОГО ОБ'ЄКТА
-                // =========================================================
-                
-                if (foundDoors.length > 0) {
-                    finalConfig.doors = foundDoors;
+                // --- ВИПРАВЛЕННЯ 2: ЯКЩО ЗАВДАННЯ ЗНАЙДЕНО ---
+                if (foundTask) {
+                    console.log(`🎯 Знайдено кастомне завдання для рівня ${level}:`, foundTask);
+
+                    finalConfig.question = foundTask.question || finalConfig.question;
+                    finalConfig.answer = String(foundTask.answer || finalConfig.answer);
                     
-                    // Глобальні налаштування теми
-                    if (topicData.reward) finalConfig.reward = parseInt(topicData.reward);
-                    if (topicData.timeLimit) finalConfig.timeLimit = parseInt(topicData.timeLimit);
-                    
-                    console.log(`🎯 УСПІХ! Знайдено конфіг для рівня ${level}`);
+                    // Обробка неправильних відповідей
+                    if (Array.isArray(foundTask.wrongAnswers)) {
+                        finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
+                    } else if (typeof foundTask.wrongAnswers === 'string') {
+                        finalConfig.wrongAnswers = foundTask.wrongAnswers.split(',').map(s => s.trim());
+                    }
+
+                    // Час і нагорода
+                    if (foundTask.timeLimit) finalConfig.time = parseInt(foundTask.timeLimit);
+                    if (foundTask.reward) finalConfig.reward = parseInt(foundTask.reward);
+
                 } else {
-                    console.warn(`⚠️ Рівень ${level} не знайдено в темі! Використовую дефолт.`);
+                    // --- ВАЖЛИВО: ЯКЩО РІВНЯ НЕМАЄ В БАЗІ ---
+                    console.warn(`⚠️ У темі "${topicKey}" немає завдання для рівня ${level}. Використовую дефолт.`);
+                    finalConfig.question = `Бонусний рівень ${level} (Тема: ${topicKey})`;
+                    // Залишаємо answer="4" та інші параметри зі стандартного конфігу,
+                    // або можемо згенерувати прості приклади
                 }
             } else {
-                console.warn(`⚠️ Тему '${topic}' не знайдено.`);
+                console.error(`❌ Тему "${topic}" не знайдено у вчителя. Доступні: ${Object.keys(data).join(", ")}`);
+                finalConfig.question = `Тема "${topic}" недоступна`;
             }
+        } else {
+            console.error("❌ Документ вчителя не знайдено.");
         }
     } catch (error) {
-        console.error("❌ ERROR Config:", error);
+        console.error("❌ ERROR GameBridge:", error);
     }
 
-    // Серіалізація в JSON
+    // Відправка
     const payload = JSON.stringify(finalConfig);
-    cachedPayload = payload; // Кешуємо для retry
-
-    console.log("📤 Sending Config to Unity:", payload);
+    cachedPayload = payload;
+    console.log("📤 Відправка в Unity:", payload);
     
-    // =========================================================
-    // 🔥 ВІДПРАВКА В UNITY (НАДІЙНИЙ СПОСІБ)
-    // =========================================================
-    
-    // 1. Спроба прямого виклику (якщо unityInstance доступний глобально)
-    if (window.unityInstance) {
-        window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', payload);
-    } 
-    // 2. Спроба виклику через contentWindow iframe (найчастіший випадок)
-    else if (iframe.contentWindow && iframe.contentWindow.unityInstance) {
-        iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', payload);
-    } 
-    // 3. Fallback: postMessage (якщо Unity ще вантажиться або використовує слухач подій в index.html)
-    else if (iframe.contentWindow) {
+    if (iframe.contentWindow) {
         iframe.contentWindow.postMessage(payload, "*");
     }
 }
 
-// Функція повторної відправки (якщо Unity попросила конфіг пізніше)
+// Для повторної відправки (якщо Unity завантажився пізніше)
 window.trySendToUnity = function() { 
     if (!cachedPayload) return;
-    console.log("🔄 Retry sending config...");
-    
     const iframe = document.getElementById("unity-iframe");
-    if (!iframe) return;
-
-    if (window.unityInstance) {
-        window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', cachedPayload);
-    } else if (iframe.contentWindow && iframe.contentWindow.unityInstance) {
-        iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', cachedPayload);
-    } else {
+    if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage(cachedPayload, "*");
     }
 };

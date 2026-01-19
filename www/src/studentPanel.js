@@ -29,118 +29,135 @@ const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
 window.currentTopicId = null; 
 
 // ==========================================
-// 🎮 ЗАПУСК UNITY
+// 🎮 ГЛОБАЛЬНИЙ СЛУХАЧ UNITY (ОДИН НА ВЕСЬ ФАЙЛ)
+// ==========================================
+window.addEventListener("message", (event) => {
+    const iframe = document.getElementById("unity-iframe");
+    // Якщо повідомлення не від нашого iframe — ігноруємо
+    if (!iframe || event.source !== iframe.contentWindow) return;
+
+    console.log("📨 [JS] Отримано від Unity:", event.data);
+    const user = getCurrentUser();
+
+    // 1. Unity просить конфіг (ГРА)
+    if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
+        if (user) {
+            const topicName = event.data.topic || "Fractions";
+            const levelRequest = event.data.level || 1;
+            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest);
+        }
+    }
+
+    // 1.5. Unity просить ліміт (МЕНЮ)
+    else if (event.data && event.data.type === "REQUEST_TEACHER_LIMIT") {
+        if (user) {
+            console.log("👮 [JS] Unity запитує ліміт...");
+            const currentTopic = window.currentTopicId || "Fractions";
+            let limit = 99;
+
+            if (user.progress?.[currentTopic]?.maxAllowedLevel) {
+                limit = parseInt(user.progress[currentTopic].maxAllowedLevel);
+            }
+            
+            // Відправка ліміту назад у Unity
+            if (iframe.contentWindow.unityInstance) {
+                iframe.contentWindow.unityInstance.SendMessage("MenuController", "SetTeacherLimit", limit);
+            } else {
+                 // Запасний варіант через глобальний об'єкт (якщо використовується)
+                 try { window.unityGame.SendMessage("MenuController", "SetTeacherLimit", limit); } catch(e){}
+            }
+        }
+    }
+
+    // 2. Рівень пройдено (ЩОДЕННИК)
+    else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
+        if (user) {
+            try {
+                const jsonPart = event.data.split("|")[1];
+                const resultData = JSON.parse(jsonPart);
+                console.log("🏆 Рівень пройдено:", resultData);
+                // Зберігаємо ТІЛЬКИ ТУТ, і оскільки слухач один - дублів не буде
+                saveGameResult(resultData, user);
+            } catch (e) { console.error("JSON Error:", e); }
+        }
+    }
+
+    // 3. Закриття гри (кнопка "Вихід" всередині Unity)
+    else if (event.data && event.data.type === "CLOSE_GAME") {
+        closeUnityGameUI();
+    }
+});
+
+// Допоміжна функція закриття інтерфейсу
+function closeUnityGameUI() {
+    const unityContainer = document.getElementById("unity-container");
+    const iframe = document.getElementById("unity-iframe");
+    const startBtn = document.getElementById("btn-start-lesson");
+    const closeBtn = document.getElementById("btn-force-close-unity");
+
+    if (unityContainer) unityContainer.classList.add("hidden");
+    if (startBtn) startBtn.style.display = "block"; // Повертаємо кнопку Старт
+    if (closeBtn) closeBtn.remove(); // Видаляємо червону кнопку закриття
+    
+    // Опціонально: перезавантажуємо iframe на пусту сторінку або зупиняємо звук
+    // if (iframe) iframe.src = "about:blank"; 
+}
+
+// Функція для глобального доступу (якщо ви її викликаєте з HTML)
+window.closeUnityGame = closeUnityGameUI;
+
+// ==========================================
+// 🎮 НАЛАШТУВАННЯ UI (КНОПКИ)
 // ==========================================
 export function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
+    
+    // Знаходимо або створюємо iframe (якщо його немає в HTML)
+    let iframe = document.getElementById("unity-iframe");
+    if (!iframe && unityContainer) {
+        iframe = document.createElement("iframe");
+        iframe.id = "unity-iframe";
+        iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
+        unityContainer.appendChild(iframe);
+    }
 
-    if (startBtn) {
+    if (startBtn && unityContainer && iframe) {
+        // Видаляємо старі обробники через клонування кнопки
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
         newBtn.onclick = () => {
-            const user = getCurrentUser(); 
-            if (!user || !user.teacherUid) return alert("Помилка: Немає ID вчителя.");
+            console.log("🚀 Кнопку СТАРТ натиснуто!");
+            const user = getCurrentUser();
 
-            if (unityContainer) {
-                unityContainer.classList.remove("hidden");
-                newBtn.style.display = "none";
+            if (!user) return alert("Ви не авторизовані!");
+            if (!user.teacherUid) return alert("Помилка: Не прив'язаний вчитель.");
 
-                // Кнопка закриття
-                if (!document.getElementById("btn-force-close-unity")) {
-                    const closeBtn = document.createElement("button");
-                    closeBtn.id = "btn-force-close-unity";
-                    closeBtn.innerText = "✖ Закрити гру";
-                    closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
-                    closeBtn.onclick = () => window.closeUnityGame();
-                    unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
-                }
+            // 1. Показуємо контейнер
+            unityContainer.classList.remove("hidden");
+            
+            // 2. Ховаємо кнопку старт
+            newBtn.style.display = "none";
 
-                let iframe = unityContainer.querySelector("iframe");
-                if (!iframe) {
-                    iframe = document.createElement("iframe");
-                    iframe.src = `unity/index.html?v=${Date.now()}`;
-                    iframe.style.cssText = "width:100%; height:100%; border:none; min-height: 600px;";
-                    iframe.id = "unity-iframe"; 
-
-                    const messageHandler = (event) => {
-                        if (event.source !== iframe.contentWindow) return;
-
-                        console.log("📨 [JS] Отримано від Unity:", event.data);
-
-                        // 1. Unity просить конфіг (ГРА)
-                        if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
-                            const topicName = event.data.topic || "Fractions";
-                            const levelRequest = event.data.level || 1;
-                            
-                            // 🔥 ВИКЛИКАЄМО ФУНКЦІЮ З GAMEBRIDGE
-                            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest);
-                        }
-
-                        // 🔥 1.5. Unity просить ліміт (МЕНЮ)
-                        else if (event.data && event.data.type === "REQUEST_TEACHER_LIMIT") {
-                            console.log("👮 [JS] Unity запитує ліміт...");
-                            
-                            // Визначаємо тему (якщо змінної немає, ставимо дефолт)
-                            const currentTopic = window.currentTopicId || "Fractions"; 
-                            let limit = 99; // За замовчуванням відкрито все
-
-                            // Перевіряємо базу даних користувача
-                            if (user.progress && user.progress[currentTopic] && user.progress[currentTopic].maxAllowedLevel) {
-                                limit = parseInt(user.progress[currentTopic].maxAllowedLevel);
-                            }
-
-                            console.log(`📤 Відправляю ліміт у Unity: ${limit} для теми ${currentTopic}`);
-
-                            // Відправка назад у Unity
-                            if (iframe.contentWindow.unityInstance) {
-                                iframe.contentWindow.unityInstance.SendMessage("MenuController", "SetTeacherLimit", limit);
-                            } else if (window.unityInstance) {
-                                window.unityInstance.SendMessage("MenuController", "SetTeacherLimit", limit);
-                            }
-                        }
-
-                        // 2. Рівень пройдено (ЩОДЕННИК)
-                        else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
-                            try {
-                                const jsonPart = event.data.split("|")[1];
-                                const resultData = JSON.parse(jsonPart);
-                                console.log("🏆 Рівень пройдено:", resultData);
-                                saveGameResult(resultData, user); 
-                            } catch(e) { console.error("JSON Error:", e); }
-                        }
-
-                        // 3. Закриття
-                        else if (event.data && event.data.type === "CLOSE_GAME") {
-                            window.closeUnityGame(); 
-                        }
-                    };
-                    
-                    window.addEventListener("message", messageHandler);
-                    iframe._handler = messageHandler; 
-                    unityContainer.appendChild(iframe);
-                }
+            // 3. Створюємо кнопку примусового закриття (якщо немає)
+            if (!document.getElementById("btn-force-close-unity")) {
+                const closeBtn = document.createElement("button");
+                closeBtn.id = "btn-force-close-unity";
+                closeBtn.innerText = "✖ Закрити гру";
+                closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
+                closeBtn.onclick = () => closeUnityGameUI();
+                unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
             }
+
+            // 4. ЗАПУСК / ПЕРЕЗАПУСК ГРИ
+            console.log("🔄 Завантажую Unity...");
+            // Додаємо timestamp, щоб уникнути кешування і точно перезапустити гру
+            iframe.src = `unity/index.html?v=${Date.now()}`;
         };
+    } else {
+        console.warn("⚠️ setupUnityUI: Не знайдено кнопку старт або контейнер unity");
     }
-    
-    window.closeUnityGame = function() {
-        if (unityContainer) {
-            unityContainer.classList.add("hidden");
-            const iframe = unityContainer.querySelector("iframe");
-            if (iframe) {
-                if (iframe._handler) window.removeEventListener("message", iframe._handler);
-                iframe.src = ""; 
-                iframe.remove();
-            }
-        }
-        const closeBtn = document.getElementById("btn-force-close-unity");
-        if (closeBtn) closeBtn.remove();
-        
-        const currentStartBtn = document.getElementById("btn-start-lesson");
-        if (currentStartBtn) currentStartBtn.style.display = "inline-block"; 
-    };
 }
 
 // ==========================================
@@ -274,10 +291,14 @@ function renderStudentDiary(currentUser) {
 
 // Допоміжна функція перекладу тем
 function translateTopic(topic) {
-    if(topic === "Fractions") return "Дроби";
-    if(topic === "Powers") return "Степені";
-    if(topic === "Quadratics") return "Рівняння";
-    return topic;
+    if (!topic) return "Невідома тема";
+    const t = topic.toLowerCase(); // Приводимо до нижнього регістру для надійності
+    
+    if(t === "fractions") return "Дроби";
+    if(t === "powers") return "Степені";
+    if(t === "quadratics") return "Рівняння";
+    
+    return topic; // Якщо перекладу немає, повертаємо оригінал
 }
 
 // ==========================================

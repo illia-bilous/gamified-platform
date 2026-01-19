@@ -161,15 +161,21 @@
                     </div>
 
                     <div class="game-wrapper" style="width: 100%; max-width: 1200px; text-align: center;">
+    
                         <button id="btn-start-lesson" class="btn-primary" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
                             ▶ ПОЧАТИ УРОК
                         </button>
                         
-                        <iframe id="unity-iframe" 
-                                src="unity/index.html" 
-                                class="hidden"
-                                style="width: 960px; height: 600px; border: none; margin-top: 20px; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                        </iframe>
+                        <div id="unity-container" class="hidden">
+                            <iframe id="unity-iframe" 
+                                    src="about:blank" 
+                                    allowfullscreen="true"
+                                    webkitallowfullscreen="true"
+                                    mozallowfullscreen="true"
+                                    style="width: 960px; height: 600px; border: none; margin-top: 20px; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                            </iframe>
+                        </div>
+
                     </div>
                 </div>
             </div>
