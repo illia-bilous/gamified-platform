@@ -10,16 +10,17 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
     console.log(`📥 GameBridge: Завантаження... Teacher=${teacherId}, Topic=${topic}, Level=${level}`);
 
     const iframe = document.getElementById("unity-iframe");
-    if (!iframe || !iframe.contentWindow) {
-        console.error("❌ GameBridge: Unity Iframe не знайдено!");
+    // Якщо iframe ще не створено (наприклад, гра не відкрита)
+    if (!iframe) {
+        console.warn("⚠️ GameBridge: Unity Iframe не знайдено (гра закрита?).");
         return;
     }
 
-    // Базовий конфіг
+    // Базовий конфіг (якщо в базі нічого немає)
     let finalConfig = {
-        reward: 50,     // Глобальний фоллбек
-        timeLimit: 300, // Глобальний фоллбек
-        doors: [],      // Сюди ми покладемо наші дані
+        reward: 50,     
+        timeLimit: 300, 
+        doors: [],      
         topic: topic,
         level: level,
         teacherId: teacherId,
@@ -42,35 +43,30 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
             if (topicData) {
                 console.log(`📂 Дані теми знайдено. Структура:`, topicData);
                 
-                let foundDoors = []; // Тимчасова змінна для дверей
+                let foundDoors = []; 
 
                 // =========================================================
-                // 🔍 ЛОГІКА ВИЗНАЧЕННЯ СТРУКТУРИ (Виправлена)
+                // 🔍 ЛОГІКА ВИЗНАЧЕННЯ СТРУКТУРИ
                 // =========================================================
 
-                // ВАРІАНТ 1: Класичний (всередині теми є масив "doors") -> Це твій "Fractions"
+                // ВАРІАНТ 1: Класичний (всередині теми є масив "doors")
                 if (topicData.doors && Array.isArray(topicData.doors)) {
-                    console.log("✅ Тип: Standard 'doors' array");
-                    // Ми беремо ВЕСЬ масив, бо C# сам знайде потрібний ID всередині
+                    // Беремо весь масив, Unity саме знайде потрібний ID
                     foundDoors = topicData.doors; 
                 }
                 
                 // ВАРІАНТ 2: Сама тема є масивом рівнів [Level1, Level2]
                 else if (Array.isArray(topicData)) {
-                    console.log("✅ Тип: Array of levels");
                     const idx = level - 1;
                     if (topicData[idx]) {
-                        // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив, щоб C# його з'їв
                         foundDoors = [ topicData[idx] ]; 
                     }
                 }
                 
                 // ВАРІАНТ 3: Сама тема є об'єктом рівнів {"1": {...}, "2": {...}}
                 else if (typeof topicData === 'object') {
-                    console.log("✅ Тип: Object map");
                     let specificLevel = topicData[level] || topicData[String(level)];
                     if (specificLevel) {
-                         // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив
                         foundDoors = [ specificLevel ];
                     }
                 }
@@ -79,25 +75,17 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
                 // 📤 ФОРМУВАННЯ ФІНАЛЬНОГО ОБ'ЄКТА
                 // =========================================================
                 
-                // Якщо ми знайшли двері (або одну, або список)
                 if (foundDoors.length > 0) {
                     finalConfig.doors = foundDoors;
                     
-                    // Спробуємо витягнути глобальні налаштування теми, якщо вони є
+                    // Глобальні налаштування теми
                     if (topicData.reward) finalConfig.reward = parseInt(topicData.reward);
                     if (topicData.timeLimit) finalConfig.timeLimit = parseInt(topicData.timeLimit);
                     
-                    console.log(`🎯 УСПІХ! Відправляємо дверей: ${finalConfig.doors.length}`);
-                    
-                    // Лог для перевірки, чи є reward всередині дверей
-                    const targetDoor = finalConfig.doors.find(d => d.id == level);
-                    if(targetDoor) {
-                        console.log(`🧐 Перевірка для рівня ${level}: Reward=${targetDoor.reward}, Time=${targetDoor.timeLimit}`);
-                    }
+                    console.log(`🎯 УСПІХ! Знайдено конфіг для рівня ${level}`);
                 } else {
-                    console.warn(`⚠️ Рівень ${level} не знайдено в темі!`);
+                    console.warn(`⚠️ Рівень ${level} не знайдено в темі! Використовую дефолт.`);
                 }
-
             } else {
                 console.warn(`⚠️ Тему '${topic}' не знайдено.`);
             }
@@ -106,25 +94,43 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
         console.error("❌ ERROR Config:", error);
     }
 
+    // Серіалізація в JSON
     const payload = JSON.stringify(finalConfig);
-    cachedPayload = payload; // Зберігаємо для ретраю
+    cachedPayload = payload; // Кешуємо для retry
 
-    console.log("📤 Sending JSON to Unity:", payload);
+    console.log("📤 Sending Config to Unity:", payload);
     
-    iframe.contentWindow.postMessage({ 
-        type: "CONFIG_RESPONSE", 
-        payload: payload 
-    }, "*");
+    // =========================================================
+    // 🔥 ВІДПРАВКА В UNITY (НАДІЙНИЙ СПОСІБ)
+    // =========================================================
+    
+    // 1. Спроба прямого виклику (якщо unityInstance доступний глобально)
+    if (window.unityInstance) {
+        window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', payload);
+    } 
+    // 2. Спроба виклику через contentWindow iframe (найчастіший випадок)
+    else if (iframe.contentWindow && iframe.contentWindow.unityInstance) {
+        iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', payload);
+    } 
+    // 3. Fallback: postMessage (якщо Unity ще вантажиться або використовує слухач подій в index.html)
+    else if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage(payload, "*");
+    }
 }
 
-// Функція для повторної відправки (якщо Unity завантажилась пізніше)
-window.trySendToUnity = function() { // Робимо доступною глобально про всяк випадок
+// Функція повторної відправки (якщо Unity попросила конфіг пізніше)
+window.trySendToUnity = function() { 
     if (!cachedPayload) return;
-    let unityFrame = document.getElementById("unity-iframe");
-    if (unityFrame && unityFrame.contentWindow) {
-        unityFrame.contentWindow.postMessage({ 
-            type: "CONFIG_RESPONSE", 
-            payload: cachedPayload 
-        }, "*");
+    console.log("🔄 Retry sending config...");
+    
+    const iframe = document.getElementById("unity-iframe");
+    if (!iframe) return;
+
+    if (window.unityInstance) {
+        window.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', cachedPayload);
+    } else if (iframe.contentWindow && iframe.contentWindow.unityInstance) {
+        iframe.contentWindow.unityInstance.SendMessage('MathLevelManager', 'ReceiveConfig', cachedPayload);
+    } else {
+        iframe.contentWindow.postMessage(cachedPayload, "*");
     }
 };
