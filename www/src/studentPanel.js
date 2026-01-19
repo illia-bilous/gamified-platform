@@ -197,97 +197,87 @@ async function saveGameResult(resultData, user) {
 }
 
 // ==========================================
-// 📓 ЩОДЕННИК
+// 📓 ЩОДЕННИК (Адаптовано під твій HTML)
 // ==========================================
-function renderStudentDiary(currentUser) {
-    const container = document.getElementById("view-diary");
-    if (!container) return;
+export function renderStudentDiary(currentUser) {
+    // 1. Шукаємо правильний ID секції (як у index.html)
+    const container = document.getElementById("view-journal"); 
+    const tbody = document.getElementById("student-journal-tbody");
 
+    if (!container || !tbody) {
+        console.warn("⚠️ Елементи щоденника не знайдено в HTML");
+        return;
+    }
+
+    // Очищаємо попередній слухач, щоб не було дублів
     if (diaryUnsubscribe) {
         diaryUnsubscribe();
         diaryUnsubscribe = null;
     }
 
-    container.innerHTML = `
-        <div class="page-header-container">
-            <h2 class="page-header-title">📔 Мій Щоденник</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Історія твоїх успіхів та оцінок.</p>
-        </div>
-        
-        <div class="leaderboard-wrapper" style="max-height: 500px; overflow-y: auto;">
-            <table class="leaderboard-table" style="width: 100%; text-align: left;">
-                <thead>
-                    <tr style="color: #f1c40f;">
-                        <th style="padding:10px;">Дата</th>
-                        <th>Тема</th>
-                        <th>Рівень</th>
-                        <th>Час</th>
-                        <th>Помилки</th>
-                        <th>Оцінка</th>
-                        <th>Золото</th>
-                    </tr>
-                </thead>
-                <tbody id="diary-tbody">
-                    <tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">Завантаження...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    `;
+    console.log(`📡 Щоденник: Завантажуємо для ${currentUser.uid}`);
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color:#aaa;">Завантаження даних... ⏳</td></tr>`;
 
-    const tbody = document.getElementById("diary-tbody");
-
+    // 2. Формуємо запит до бази
     const q = query(
         collection(db, "users", currentUser.uid, "game_sessions"), 
         orderBy("timestamp", "desc"), 
         limit(50)
     );
 
-    diaryUnsubscribe = onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">Історія порожня. Зіграй першу гру!</td></tr>`;
-            return;
-        }
+    // 3. Запускаємо слухач
+    diaryUnsubscribe = onSnapshot(q, 
+        (snapshot) => {
+            if (snapshot.empty) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color:#777;">Історія пуста. Зіграй першу гру! 🎮</td></tr>`;
+                return;
+            }
 
-        tbody.innerHTML = "";
-        
-        snapshot.forEach(docSnap => {
-            const d = docSnap.data();
+            tbody.innerHTML = ""; // Очистити "Завантаження..."
+
+            snapshot.forEach(docSnap => {
+                const d = docSnap.data();
+
+                // Форматування дати
+                let dateStr = "--/--";
+                if (d.timestamp && d.timestamp.seconds) {
+                    dateStr = new Date(d.timestamp.seconds * 1000).toLocaleString('uk-UA', { 
+                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                    });
+                }
+
+                // Колір оцінки
+                let gradeColor = "#e74c3c"; // Червоний
+                if (d.grade >= 10) gradeColor = "#2ecc71"; // Зелений
+                else if (d.grade >= 7) gradeColor = "#f1c40f"; // Жовтий
+                else if (d.grade >= 4) gradeColor = "#e67e22"; // Помаранчевий
+
+                // Назва теми (якщо англійською - перекладаємо)
+                const topicName = d.topic === "Fractions" ? "Дроби" : (d.topic || "Тема");
+
+                // Формуємо рядок таблиці (відповідає твоїм колонкам у HTML: Дата, Рівень, Час, Помилки, Золото, Оцінка)
+                const row = `
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 12px; color: #ccc;">${dateStr}</td>
+                        <td style="text-align: center; color: white;">${d.level || 1} (${topicName})</td>
+                        <td style="text-align: center;">${d.timeSpent || 0}с</td>
+                        <td style="text-align: center;">${d.mistakes || 0}</td>
+                        <td style="text-align: center; color: #f1c40f;">+${d.score || 0} 💰</td>
+                        <td style="text-align: center;"><span style="color:${gradeColor}; font-weight:bold; font-size: 1.1em;">${d.grade || 0}</span></td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        },
+        (error) => {
+            console.error("❌ ПОМИЛКА ЩОДЕННИКА:", error);
+            tbody.innerHTML = `<tr><td colspan="6" style="color:red; text-align:center;">Помилка: ${error.message}</td></tr>`;
             
-            let dateStr = "--/--";
-            if (d.timestamp) dateStr = d.timestamp.toDate().toLocaleString('uk-UA', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-            const m = Math.floor(d.timeSpent / 60);
-            const s = d.timeSpent % 60;
-            const timeStr = `${m}хв ${s}с`;
-
-            let gradeColor = "#e74c3c"; 
-            if (d.grade >= 10) gradeColor = "#2ecc71"; 
-            else if (d.grade >= 7) gradeColor = "#f1c40f"; 
-            else if (d.grade >= 4) gradeColor = "#e67e22"; 
-
-            tbody.innerHTML += `
-                <tr style="border-bottom: 1px solid #333;">
-                    <td style="padding:10px; color:#ccc;">${dateStr}</td>
-                    <td style="color:white; font-weight:bold;">${translateTopic(d.topic)}</td>
-                    <td style="text-align:center;">${d.level}</td>
-                    <td style="color:#aaa;">${timeStr}</td>
-                    <td style="text-align:center; color:#e74c3c;">${d.mistakes}</td>
-                    <td style="text-align:center; font-weight:bold; font-size:1.2em; color:${gradeColor};">${d.grade || 0}</td>
-                    <td style="text-align:center; color:#f1c40f;">+${d.score}</td>
-                </tr>
-            `;
-        });
-    });
-}
-
-function translateTopic(topic) {
-    if (!topic) return "Невідома тема";
-    const t = topic.toLowerCase(); 
-    if(t === "fractions") return "Дроби";
-    if(t === "powers") return "Степені";
-    if(t === "quadratics") return "Рівняння";
-    return topic; 
+            if (error.message.includes("index")) {
+                console.log("⚠️ КЛІКНИ НА ПОСИЛАННЯ В КОНСОЛІ, ЩОБ СТВОРИТИ ІНДЕКС!");
+            }
+        }
+    );
 }
 
 // ==========================================
