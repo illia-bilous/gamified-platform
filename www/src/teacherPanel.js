@@ -537,7 +537,9 @@ function setupLevelEditorLogic() {
     // ==========================================
     btnSave.onclick = async () => {
         const topic = document.getElementById("editor-topic").value;
-        const levelNum = parseInt(document.getElementById("editor-level").value);
+        const levelNum = parseInt(document.getElementById("editor-level").value); // Наприклад, 1, 2 або 3
+        
+        // Збираємо неправильні відповіді, фільтруємо пусті
         const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
 
         if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
@@ -547,40 +549,46 @@ function setupLevelEditorLogic() {
         try {
             const docRef = doc(db, "teacher_configs", user.uid);
             const docSnap = await getDoc(docRef);
+            
+            // Отримуємо поточні дані або створюємо пустий об'єкт
             let currentData = docSnap.exists() ? docSnap.data() : {};
-            let topicData = currentData[topic] || { doors: [] };
-            let doors = topicData.doors || [];
-            // Створюємо тему, якщо її немає
-            if (!Array.isArray(doors)) doors = [];
+            
+            // Переконуємось, що структура теми існує
+            if (!currentData[topic]) currentData[topic] = {};
+            
+            // Переконуємось, що масив doors існує
+            if (!Array.isArray(currentData[topic].doors)) currentData[topic].doors = [];
+            
+            let doors = currentData[topic].doors;
 
-            // 🔥 ВИПРАВЛЕННЯ: Формуємо об'єкт рівня з reward і timeLimit
+            // Формуємо об'єкт рівня
             const doorData = {
                 id: levelNum,
                 question: qInput.value.trim(),
                 answer: cInput.value.trim(),
                 wrongAnswers: wrongs,
-                reward: parseInt(goldInput.value) || 50,      // <--- ТЕПЕР ВОНО ТУТ
-                timeLimit: parseInt(timeInput.value) || 120   // <--- І ТУТ
+                reward: parseInt(goldInput.value) || 50,
+                timeLimit: parseInt(timeInput.value) || 120
             };
 
-            // Шукаємо, чи є вже такий рівень, щоб оновити його
-            const index = doors.findIndex(d => d.id === levelNum);
+            // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ:
+            // Записуємо строго у відповідний індекс (рівень 1 -> індекс 0)
+            // Це гарантує, що Unity знайде правильний рівень, навіть якщо ми зберегли їх не по порядку.
+            const index = levelNum - 1;
             
-            if (index > -1) {
-                doors[index] = doorData; // Оновлюємо існуючий
-            } else {
-                doors.push(doorData);    // Додаємо новий
-            }
+            doors[index] = doorData;
 
+            // Зберігаємо (merge: true не видалить інші теми цього вчителя)
             await setDoc(docRef, { 
                 [topic]: { doors: doors } 
             }, { merge: true });
 
+            console.log(`✅ Saved Level ${levelNum} at index ${index} for topic ${topic}`);
             statusText.textContent = `✅ Збережено в тему "${topic}"!`;
     
         } catch (e) {
             console.error("Помилка Firebase:", e);
-            statusText.textContent = "❌ Помилка збереження.";
+            statusText.textContent = "❌ Помилка збереження: " + e.message;
         }
     };
 }
