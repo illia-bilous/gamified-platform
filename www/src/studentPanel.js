@@ -215,23 +215,35 @@ export function setupUnityUI() {
 async function saveGameResult(resultData, user) {
     try {
         const score = Number(resultData.score || 0);
-        // ВАЖЛИВО: Переконайтеся, чи ваша колекція "users" чи "students"
         const userRef = doc(db, "users", user.uid); 
 
-        // Тільки додаємо золото
+        // 1. Перевіряємо стан чекбокса прямо зараз (перед збереженням)
+        const shieldCheckbox = document.querySelector('.booster-checkbox[value="sys_shield"]');
+        const isShieldActive = shieldCheckbox ? shieldCheckbox.checked : false;
+
+        // 2. Створюємо "чистий" об'єкт для щоденника
+        const cleanedData = {
+            ...resultData,
+            // Якщо щит був, зануляємо помилки та ставимо 12, інакше лишаємо як є
+            mistakes: isShieldActive ? 0 : (resultData.mistakes || 0),
+            grade: isShieldActive ? 12 : (resultData.grade || 0),
+            timestamp: serverTimestamp(),
+            win: score > 0,
+            shieldUsed: isShieldActive // додаємо мітку для історії
+        };
+
+        // 3. Оновлюємо золото в профілі
         await updateDoc(userRef, { 
             "profile.gold": increment(score) 
         });
 
-        // Зберігаємо сесію
-        await addDoc(collection(db, "users", user.uid, "game_sessions"), {
-            ...resultData,
-            timestamp: serverTimestamp(),
-            win: score > 0 
-        });
-        console.log("✅ Результат збережено, золото додано:", score);
+        // 4. Зберігаємо сесію з ВИПРАВЛЕНИМИ даними
+        await addDoc(collection(db, "users", user.uid, "game_sessions"), cleanedData);
+
+        console.log(isShieldActive ? "🛡️ Щит спрацював: в базу записано 12 балів та 0 помилок!" : "✅ Результат збережено");
+
     } catch (e) { 
-        console.error("❌ Save Error:", e); 
+        console.error("❌ Помилка збереження:", e); 
     }
 }
 
