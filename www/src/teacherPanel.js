@@ -197,20 +197,37 @@ async function renderStudentProfile(student) {
 
     // --- (Код підготовки інвентаря) ---
     const inventory = student.profile?.inventory || [];
+    
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
-        acc[itemName] = (acc[itemName] || 0) + 1;
+        if (!acc[itemName]) {
+            acc[itemName] = { 
+                count: 0, 
+                // Визначаємо системний предмет по ID (sys_) або прапорцю
+                isSystem: (item.id && String(item.id).startsWith('sys_')) || item.isSystem 
+            };
+        }
+        acc[itemName].count += 1;
         return acc;
     }, {});
 
     const inventoryListHtml = Object.keys(stackedInventory).length > 0
-        ? Object.keys(stackedInventory).map(name => `
-            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
-                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${stackedInventory[name]})</b></span>
-                <button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
+        ? Object.keys(stackedInventory).map(name => {
+            const data = stackedInventory[name];
+            
+            // Якщо системний — показуємо мітку, якщо звичайна нагорода — кнопку видалення
+            const actionHtml = data.isSystem 
+                ? `<span style="color: #2ecc71; font-size: 0.8em; font-weight: bold; margin-left: 10px; background: rgba(46, 204, 113, 0.1); padding: 4px 8px; border-radius: 4px; border: 1px solid #2ecc71;">⚡ БУСТЕР</span>`
+                : `<button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
                     🗑️ Списати
-                </button>
-            </div>`).join('')
+                   </button>`;
+
+            return `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
+                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${data.count})</b></span>
+                ${actionHtml}
+            </div>`;
+        }).join('')
         : '<p style="opacity: 0.5; font-style: italic; padding: 20px; text-align: center;">Нагороди ще не придбані</p>';
         
     const goldDisplay = student.profile?.gold || 0; 

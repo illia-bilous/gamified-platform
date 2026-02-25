@@ -1,6 +1,5 @@
 import { db } from "./firebase.js"; 
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+import { doc, getDoc, updateDoc, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 let cachedPayload = null; 
 
 // Допоміжна функція для пошуку теми без урахування регістру (Fractions == fractions)
@@ -47,92 +46,112 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
         return;
     }
 
-    // --- 0. БАЗОВА ЗАГЛУШКА (Safety Net) ---
-    // Використовується тільки якщо Firestore впав або глобальний конфіг видалено
     let finalConfig = {
         question: `Рівень ${level}: 2 + 2 = ?`, 
         answer: "4",
         wrongAnswers: ["5", "3", "1"],
         time: 120,
-        reward: 10 
+        reward: 10,
+        hasShield: false,
+        hasRadar: false,
+        hasExtraTime: false
     };
 
-    let foundTask = null; // Тут будемо зберігати знайдене завдання
-    let source = "Local Fallback"; // Для логів
+    // ==========================================
+    // 🛡️ ЛОГІКА БУСТЕРІВ (СПИСАННЯ З МАСИВУ)
+    // ==========================================
+    const selectedBoosterIds = Array.from(document.querySelectorAll('.booster-checkbox:checked'))
+                                    .map(cb => cb.value);
+    
+    if (selectedBoosterIds.length > 0 && studentId) {
+        try {
+            const studentRef = doc(db, "users", studentId);
+            const studentSnap = await getDoc(studentRef);
 
+            if (studentSnap.exists()) {
+                const studentData = studentSnap.data();
+                // У вас інвентар лежить в profile.inventory
+                const inventory = studentData.profile?.inventory || [];
+                const toRemove = [];
+
+                selectedBoosterIds.forEach(id => {
+                    // Знаходимо ПОВНИЙ об'єкт у масиві, бо arrayRemove видаляє лише при повному збігу
+                    const itemObject = inventory.find(i => i.id === id);
+                    
+                    if (itemObject) {
+                        toRemove.push(itemObject);
+                        
+                        // Вмикаємо прапорці для Unity
+                        if (id === 'sys_shield') finalConfig.hasShield = true;
+                        if (id === 'sys_radar') finalConfig.hasRadar = true;
+                        if (id === 'sys_time') finalConfig.hasExtraTime = true;
+                    }
+                });
+
+                if (toRemove.length > 0) {
+                    await updateDoc(studentRef, {
+                        "profile.inventory": arrayRemove(...toRemove)
+                    });
+                    console.log("💎 Бустери списано з бази:", toRemove.map(i => i.id));
+                }
+            }
+        } catch (e) {
+            console.error("❌ Помилка списання бустерів:", e);
+            // Зупиняємо запуск, якщо не вдалося списати (захист від накрутки)
+            return; 
+        }
+    }
+    // ==========================================
+
+    let foundTask = null;
     try {
-        // --- 1. ПЕРЕВІРКА ВЧИТЕЛЯ (Teacher Config) ---
+        // --- 1. ПЕРЕВІРКА ВЧИТЕЛЯ ---
         if (teacherId) {
             const teacherRef = doc(db, "teacher_configs", teacherId);
             const teacherSnap = await getDoc(teacherRef);
-
             if (teacherSnap.exists()) {
-                const teacherData = teacherSnap.data();
-                const topicData = findTopicCaseInsensitive(teacherData, topic);
-                
+                const topicData = findTopicCaseInsensitive(teacherSnap.data(), topic);
                 if (topicData) {
                     foundTask = getLevelFromTopicData(topicData, level);
-                    if (foundTask) source = "Teacher Config";
                 }
             }
         }
 
-        // --- 2. ПЕРЕВІРКА ГЛОБАЛЬНОГО КОНФІГУ (Global Config) ---
-        // Виконується ТІЛЬКИ якщо завдання ще не знайдено
+        // --- 2. ГЛОБАЛЬНИЙ КОНФІГ ---
         if (!foundTask) {
-            console.log(`⚠️ У вчителя немає рівня ${level} для ${topic}. Шукаємо в Global Config...`);
-            
             const globalRef = doc(db, "global_config", "game_levels");
             const globalSnap = await getDoc(globalRef);
-
             if (globalSnap.exists()) {
-                const globalData = globalSnap.data();
-                const topicData = findTopicCaseInsensitive(globalData, topic);
-                
+                const topicData = findTopicCaseInsensitive(globalSnap.data(), topic);
                 if (topicData) {
                     foundTask = getLevelFromTopicData(topicData, level);
-                    if (foundTask) source = "Global Config";
                 }
-            } else {
-                console.error("❌ Global Config (game_levels) не знайдено в Firestore!");
             }
         }
 
-        // --- 3. ФОРМУВАННЯ ФІНАЛЬНОГО ОБ'ЄКТА ---
         if (foundTask) {
-            console.log(`🎯 Завдання знайдено! Джерело: [${source}]`, foundTask);
-
             finalConfig.question = foundTask.question || "Питання?";
             finalConfig.answer = String(foundTask.answer || "0");
-            
-            // Обробка неправильних відповідей
             if (Array.isArray(foundTask.wrongAnswers)) {
                 finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
-            } else if (typeof foundTask.wrongAnswers === 'string') {
-                finalConfig.wrongAnswers = foundTask.wrongAnswers.split(',').map(s => s.trim());
             }
-
-            // Час і нагорода (безпечне перетворення)
-            if (foundTask.timeLimit !== undefined) finalConfig.time = parseInt(foundTask.timeLimit);
+            
+            let baseTime = foundTask.timeLimit ? parseInt(foundTask.timeLimit) : 120;
+            // Якщо активовано бустер часу, додаємо 30 секунд (наприклад)
+            finalConfig.time = finalConfig.hasExtraTime ? baseTime + 30 : baseTime;
+            
             if (foundTask.reward !== undefined) finalConfig.reward = parseInt(foundTask.reward);
-        
-        } else {
-            console.warn(`❌ Завдання не знайдено ні у вчителя, ні глобально. Використовую заглушку.`);
-            finalConfig.question = `Тема "${topic}" (Рівень ${level}) недоступна`;
         }
-
-    } catch (error) {
-        console.error("❌ ERROR GameBridge:", error);
-    }
+    } catch (err) { console.error(err); }
 
     // --- 4. ВІДПРАВКА ---
     const payload = JSON.stringify(finalConfig);
     cachedPayload = payload;
-    
-    console.log(`📤 Відправка в Unity (${source}):`, payload);
-    
-    if (iframe.contentWindow) {
-        iframe.contentWindow.postMessage(payload, "*");
+    const unityGame = iframe.contentWindow.unityInstance;
+
+    if (unityGame) {
+        console.log("✅ Відправка до GameManager:", finalConfig);
+        unityGame.SendMessage("GameManager", "AcceptConfig", payload);
     }
 }
 

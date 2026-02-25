@@ -9,115 +9,172 @@ import {
     where,  
     setDoc, 
     doc, 
-    getDoc, 
     updateDoc, 
     onSnapshot, 
     addDoc, 
     serverTimestamp,
     orderBy,  
     limit,     
-    increment // 🔥 Залишив один раз (у тебе було двічі)
+    increment 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+// Глобальні змінні стану
 let leaderboardUnsubscribe = null;
 let diaryUnsubscribe = null; 
+let goldTrackerUnsubscribe = null;
 let cachedShopItems = null;
-
-// 🔥 ПРАПОРЕЦЬ ЗАХИСТУ ВІД ДУБЛІВ
 let isProcessingReward = false; 
 
 const DEFAULT_AVATAR = 'assets/img/base.png';
 const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
-
 window.currentTopicId = null; 
 
 // ==========================================
-// 🎮 ГЛОБАЛЬНИЙ СЛУХАЧ UNITY (ОДИН НА ВЕСЬ ФАЙЛ)
+// 🎮 ГЛОБАЛЬНИЙ СЛУХАЧ UNITY
 // ==========================================
 window.addEventListener("message", (event) => {
     const iframe = document.getElementById("unity-iframe");
     if (!iframe || event.source !== iframe.contentWindow) return;
 
-    // console.log("📨 [JS] Отримано від Unity:", event.data); // Можна розкоментувати для дебагу
     const user = getCurrentUser();
 
-    // 1. Unity просить конфіг (ГРА)
+    // 1. Запит конфігурації
     if (event.data && (event.data.type === "REQUEST_CONFIG" || event.data.type === "UNITY_READY")) {
         if (user) {
             const topicName = event.data.topic || "Fractions";
             const levelRequest = event.data.level || 1;
+            
+            // Ми прибрали локальний об'єкт selectedBoosters, 
+            // бо gameBridge.js сам зчитає стан чекбоксів з DOM.
+            console.log(`🎮 Запит конфігурації: ${topicName}, рівень ${levelRequest}`);
+            
+            // ВИПРАВЛЕНО: Видалено неіснуючу змінну selectedBoosters з аргументів
             sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest);
         }
     }
 
-    // 1.5. Unity просить ліміт (МЕНЮ)
+    // 2. Запит ліміту рівня від вчителя
     else if (event.data && event.data.type === "REQUEST_TEACHER_LIMIT") {
         if (user) {
             const currentTopic = window.currentTopicId || "Fractions";
-            let limit = 99;
+            let limitVal = 99;
             if (user.progress?.[currentTopic]?.maxAllowedLevel) {
-                limit = parseInt(user.progress[currentTopic].maxAllowedLevel);
+                limitVal = parseInt(user.progress[currentTopic].maxAllowedLevel);
             }
-            if (iframe.contentWindow.unityInstance) {
-                iframe.contentWindow.unityInstance.SendMessage("MenuController", "SetTeacherLimit", limit);
-            } else {
-                 try { window.unityGame.SendMessage("MenuController", "SetTeacherLimit", limit); } catch(e){}
+            
+            const target = iframe.contentWindow.unityInstance || window.unityGame;
+            if (target) {
+                target.SendMessage("MenuController", "SetTeacherLimit", limitVal);
             }
         }
     }
 
-    // 2. Рівень пройдено (ЩОДЕННИК)
+    // 3. Обробка завершення рівня
     else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
-        // 🔥 ЗАХИСТ ВІД ПОДВІЙНОГО НАРАХУВАННЯ
-        if (isProcessingReward) {
-            console.warn("🚫 Ігноруємо дубль повідомлення про перемогу.");
-            return;
-        }
+        if (isProcessingReward) return;
 
         if (user) {
             try {
-                // Блокуємо повторні виклики на 2 секунди
                 isProcessingReward = true;
                 setTimeout(() => { isProcessingReward = false; }, 2000);
 
                 const jsonPart = event.data.split("|")[1];
                 const resultData = JSON.parse(jsonPart);
-                
-                console.log("🏆 Рівень пройдено (Обробка...):", resultData);
                 saveGameResult(resultData, user);
-
             } catch (e) { 
                 console.error("JSON Error:", e); 
-                isProcessingReward = false; // Знімаємо блок у разі помилки
+                isProcessingReward = false;
             }
         }
     }
 
-    // 3. Закриття гри
+    // 4. Закриття гри
     else if (event.data && event.data.type === "CLOSE_GAME") {
         closeUnityGameUI();
     }
 });
 
-// Допоміжна функція закриття інтерфейсу
 function closeUnityGameUI() {
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
     const closeBtn = document.getElementById("btn-force-close-unity");
+    const iframe = document.getElementById("unity-iframe");
 
     if (unityContainer) unityContainer.classList.add("hidden");
     if (startBtn) startBtn.style.display = "block"; 
     if (closeBtn) closeBtn.remove(); 
+    if (iframe) iframe.src = "about:blank"; 
 }
 window.closeUnityGame = closeUnityGameUI;
 
 // ==========================================
-// 🎮 НАЛАШТУВАННЯ UI
+// 🚀 БУСТЕРИ UI
+// ==========================================
+function setupBoostersUI(user) {
+    const container = document.getElementById("boosters-container");
+    if (!container) return;
+    
+    container.innerHTML = ""; 
+    const inventory = user.profile?.inventory || [];
+
+    const boosterTypes = [
+        { id: 'sys_shield', label: '🛡️ Щит' },
+        { id: 'sys_time',   label: '⏳ Час' },
+        { id: 'sys_radar',  label: '📡 Радар' }
+    ];
+
+    let boostersHtml = "";
+    let hasAny = false;
+
+    boosterTypes.forEach(type => {
+        const count = inventory.filter(i => i.id === type.id).length;
+        if (count > 0) {
+            hasAny = true;
+            boostersHtml += `
+                <label class="booster-pill" style="display: inline-flex; align-items: center; background: #2c3e50; padding: 8px 16px; border-radius: 50px; cursor: pointer; border: 2px solid #34495e; transition: all 0.3s ease; user-select: none;">
+                    <input type="checkbox" class="booster-checkbox" value="${type.id}" style="width: 18px; height: 18px; margin-right: 10px; accent-color: #f1c40f;"> 
+                    <span style="color: white; font-weight: 500; font-size: 0.9em;">
+                        ${type.label} <span style="color: #f1c40f; margin-left: 4px;">x${count}</span>
+                    </span>
+                </label>`;
+        }
+    });
+
+    if (hasAny) {
+        container.innerHTML = `
+            <div style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                <h4 style="margin: 0; font-size: 0.8em; color: #f1c40f; text-transform: uppercase; letter-spacing: 2px;">🛠️ Доступні бонуси:</h4>
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">${boostersHtml}</div>
+            </div>`;
+    } else {
+        container.innerHTML = `<p style="color: rgba(255,255,255,0.4); font-size: 0.85em; font-style: italic;">У вас немає активних бустерів.</p>`;
+    }
+}
+
+async function saveUserData(user) {
+    try {
+        const userRef = doc(db, "users", user.uid);
+        // Оновлюємо весь об'єкт profile в Firebase
+        await updateDoc(userRef, {
+            profile: user.profile
+        });
+        console.log("✅ Дані користувача оновлено в Firebase");
+    } catch (e) {
+        console.error("❌ Помилка збереження даних:", e);
+        alert("Помилка при збереженні даних у базу.");
+    }
+}
+
+// ==========================================
+// 🎮 ІНІЦІАЛІЗАЦІЯ UNITY UI
 // ==========================================
 export function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
     const startBtn = document.getElementById("btn-start-lesson");
-    
+    const user = getCurrentUser(); 
+
+    if (user) setupBoostersUI(user); 
+
     let iframe = document.getElementById("unity-iframe");
     if (!iframe && unityContainer) {
         iframe = document.createElement("iframe");
@@ -126,17 +183,14 @@ export function setupUnityUI() {
         unityContainer.appendChild(iframe);
     }
 
-    if (startBtn && unityContainer && iframe) {
+    if (startBtn && unityContainer) {
         const newBtn = startBtn.cloneNode(true);
         startBtn.parentNode.replaceChild(newBtn, startBtn);
 
         newBtn.onclick = () => {
-            console.log("🚀 Кнопку СТАРТ натиснуто!");
-            const user = getCurrentUser();
-
-            if (!user) return alert("Ви не авторизовані!");
-            if (!user.teacherUid) return alert("Помилка: Не прив'язаний вчитель.");
-
+            const freshUser = getCurrentUser();
+            if (!freshUser) return alert("Ви не авторизовані!");
+            
             unityContainer.classList.remove("hidden");
             newBtn.style.display = "none";
 
@@ -145,15 +199,13 @@ export function setupUnityUI() {
                 closeBtn.id = "btn-force-close-unity";
                 closeBtn.innerText = "✖ Закрити гру";
                 closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
-                closeBtn.onclick = () => closeUnityGameUI();
+                closeBtn.onclick = closeUnityGameUI;
                 unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
             }
 
-            console.log("🔄 Завантажую Unity...");
-            iframe.src = `unity/index.html?v=${Date.now()}`;
+            const frame = document.getElementById("unity-iframe");
+            frame.src = `unity/index.html?v=${Date.now()}`;
         };
-    } else {
-        console.warn("⚠️ setupUnityUI: Не знайдено кнопку старт або контейнер unity");
     }
 }
 
@@ -161,174 +213,98 @@ export function setupUnityUI() {
 // 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
 // ==========================================
 async function saveGameResult(resultData, user) {
-    if (!user) return;
     try {
         const score = Number(resultData.score || 0);
-        const topic = resultData.topic || "Unknown";
-        const level = Number(resultData.level) || 1; 
-        const grade = Number(resultData.grade || 0);
-        const mistakes = Number(resultData.mistakes || 0);
-        const timeSpent = Number(resultData.timeSpent || 0);
+        // ВАЖЛИВО: Переконайтеся, чи ваша колекція "users" чи "students"
+        const userRef = doc(db, "users", user.uid); 
 
-        console.log(`💾 Saving to DB -> Topic: ${topic}, Grade: ${grade}, Gold: ${score}`);
-
-        const userRef = doc(db, "users", user.uid);
-        
-        // 1. Атомарне додавання золота (найнадійніший спосіб)
-        await updateDoc(userRef, { "profile.gold": increment(score) });
-
-        // 2. Запис в історію
-        await addDoc(collection(db, "users", user.uid, "game_sessions"), {
-            topic: topic, 
-            level: level, 
-            score: score, 
-            grade: grade,       
-            mistakes: mistakes, 
-            timeSpent: timeSpent, 
-            timestamp: serverTimestamp(), 
-            win: score > 0 
+        // Тільки додаємо золото
+        await updateDoc(userRef, { 
+            "profile.gold": increment(score) 
         });
 
-        // 🔥 МИ ПРИБРАЛИ РУЧНЕ ОНОВЛЕННЯ goldDisplay ТУТ
-        // Тому що startLiveGoldTracker автоматично побачить updateDoc і оновить UI.
-        // Це усуне "стрибки" цифр.
-
-    } catch (e) { console.error("❌ Save Error:", e); }
+        // Зберігаємо сесію
+        await addDoc(collection(db, "users", user.uid, "game_sessions"), {
+            ...resultData,
+            timestamp: serverTimestamp(),
+            win: score > 0 
+        });
+        console.log("✅ Результат збережено, золото додано:", score);
+    } catch (e) { 
+        console.error("❌ Save Error:", e); 
+    }
 }
 
 // ==========================================
-// 📓 ЩОДЕННИК (Адаптовано під твій HTML)
+// 📓 ЩОДЕННИК
 // ==========================================
 export function renderStudentDiary(currentUser) {
-    // 1. Шукаємо правильний ID секції (як у index.html)
-    const container = document.getElementById("view-journal"); 
     const tbody = document.getElementById("student-journal-tbody");
+    if (!tbody) return;
 
-    if (!container || !tbody) {
-        console.warn("⚠️ Елементи щоденника не знайдено в HTML");
-        return;
-    }
+    if (diaryUnsubscribe) diaryUnsubscribe();
 
-    // Очищаємо попередній слухач, щоб не було дублів
-    if (diaryUnsubscribe) {
-        diaryUnsubscribe();
-        diaryUnsubscribe = null;
-    }
+    const q = query(collection(db, "users", currentUser.uid, "game_sessions"), orderBy("timestamp", "desc"), limit(50));
 
-    console.log(`📡 Щоденник: Завантажуємо для ${currentUser.uid}`);
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color:#aaa;">Завантаження даних... ⏳</td></tr>`;
-
-    // 2. Формуємо запит до бази
-    const q = query(
-        collection(db, "users", currentUser.uid, "game_sessions"), 
-        orderBy("timestamp", "desc"), 
-        limit(50)
-    );
-
-    // 3. Запускаємо слухач
-    diaryUnsubscribe = onSnapshot(q, 
-        (snapshot) => {
-            if (snapshot.empty) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color:#777;">Історія пуста. Зіграй першу гру! 🎮</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = ""; // Очистити "Завантаження..."
-
-            snapshot.forEach(docSnap => {
-                const d = docSnap.data();
-
-                // Форматування дати
-                let dateStr = "--/--";
-                if (d.timestamp && d.timestamp.seconds) {
-                    dateStr = new Date(d.timestamp.seconds * 1000).toLocaleString('uk-UA', { 
-                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-                    });
-                }
-
-                // Колір оцінки
-                let gradeColor = "#e74c3c"; // Червоний
-                if (d.grade >= 10) gradeColor = "#2ecc71"; // Зелений
-                else if (d.grade >= 7) gradeColor = "#f1c40f"; // Жовтий
-                else if (d.grade >= 4) gradeColor = "#e67e22"; // Помаранчевий
-
-                // Назва теми (якщо англійською - перекладаємо)
-                const topicName = d.topic === "Fractions" ? "Дроби" : (d.topic || "Тема");
-
-                // Формуємо рядок таблиці (відповідає твоїм колонкам у HTML: Дата, Рівень, Час, Помилки, Золото, Оцінка)
-                const row = `
-                    <tr style="border-bottom: 1px solid #333;">
-                        <td style="padding: 12px; color: #ccc;">${dateStr}</td>
-                        <td style="text-align: center; color: white;">${d.level || 1} (${topicName})</td>
-                        <td style="text-align: center;">${d.timeSpent || 0}с</td>
-                        <td style="text-align: center;">${d.mistakes || 0}</td>
-                        <td style="text-align: center; color: #f1c40f;">+${d.score || 0} 💰</td>
-                        <td style="text-align: center;"><span style="color:${gradeColor}; font-weight:bold; font-size: 1.1em;">${d.grade || 0}</span></td>
-                    </tr>
-                `;
-                tbody.innerHTML += row;
-            });
-        },
-        (error) => {
-            console.error("❌ ПОМИЛКА ЩОДЕННИКА:", error);
-            tbody.innerHTML = `<tr><td colspan="6" style="color:red; text-align:center;">Помилка: ${error.message}</td></tr>`;
-            
-            if (error.message.includes("index")) {
-                console.log("⚠️ КЛІКНИ НА ПОСИЛАННЯ В КОНСОЛІ, ЩОБ СТВОРИТИ ІНДЕКС!");
-            }
+    diaryUnsubscribe = onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color:#777;">Історія порожня.</td></tr>`;
+            return;
         }
-    );
+        tbody.innerHTML = snapshot.docs.map(docSnap => {
+            const d = docSnap.data();
+            const date = d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleString('uk-UA', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "--";
+            let gColor = d.grade >= 10 ? "#2ecc71" : (d.grade >= 7 ? "#f1c40f" : "#e74c3c");
+            
+            return `
+                <tr style="border-bottom: 1px solid #333;">
+                    <td style="padding: 12px; color: #ccc;">${date}</td>
+                    <td style="text-align: center; color: white;">${d.level} (${d.topic})</td>
+                    <td style="text-align: center;">${d.timeSpent}с</td>
+                    <td style="text-align: center;">${d.mistakes}</td>
+                    <td style="text-align: center; color: #f1c40f;">+${d.score} 💰</td>
+                    <td style="text-align: center;"><span style="color:${gColor}; font-weight:bold;">${d.grade}</span></td>
+                </tr>`;
+        }).join('');
+    });
 }
 
 // ==========================================
-// 🛠️ СИСТЕМНІ ФУНКЦІЇ
+// 🛠️ СИСТЕМНІ ТА МАГАЗИН
 // ==========================================
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
-    document.getElementById("student-class-display").textContent = currentUser.className || "--";
-    const avatarImg = document.getElementById("current-user-avatar");
-    if (avatarImg) {
-        let path = currentUser.profile.avatar || DEFAULT_AVATAR;
-        if (path.includes('assets/avatars/')) path = path.replace('assets/avatars/', 'assets/img/');
-        avatarImg.src = path;
-    }
     const goldEl = document.getElementById("student-gold-display");
     if (goldEl) goldEl.textContent = currentUser.profile.gold;
     
+    const avatarImg = document.getElementById("current-user-avatar");
+    if (avatarImg) avatarImg.src = currentUser.profile.avatar?.replace('assets/avatars/', 'assets/img/') || DEFAULT_AVATAR;
+
     renderInventory(currentUser);
     renderStudentDiary(currentUser);
-}
-
-async function saveUserData(user) {
-    localStorage.setItem("currentUser", JSON.stringify(user));
-    if (user.uid) await updateDoc(doc(db, "users", user.uid), { profile: user.profile });
+    setupBoostersUI(currentUser);
 }
 
 function startLiveGoldTracker(userId) {
-    console.log("📡 Запущено живий трекер + слухач скидання...");
+    if (goldTrackerUnsubscribe) goldTrackerUnsubscribe();
     const userRef = doc(db, "users", userId);
     
-    onSnapshot(userRef, async (docSnap) => {
+    goldTrackerUnsubscribe = onSnapshot(userRef, async (docSnap) => {
         if (docSnap.exists()) {
-            const freshData = docSnap.data();
-
-            if (freshData.needReset === true) {
-                console.warn("🧨 Вчитель активував повне скидання!");
+            const data = docSnap.data();
+            if (data.needReset) {
                 await updateDoc(userRef, { needReset: false });
-                const req = indexedDB.deleteDatabase("/idbfs");
-                req.onsuccess = () => {
-                    alert("УВАГА: Вчитель повністю скинув ваш ігровий прогрес.");
-                    location.reload();
-                };
-                return; 
+                indexedDB.deleteDatabase("/idbfs");
+                alert("Прогрес скинуто вчителем.");
+                location.reload();
+                return;
             }
-
-            // ОНОВЛЮЄМО ВСЕ АВТОМАТИЧНО
             let user = getCurrentUser();
-            user.profile = docSnap.data().profile;
+            user.profile = data.profile;
             localStorage.setItem("currentUser", JSON.stringify(user));
-            updateHomeDisplay(user); // Це оновить і золото, і інвентар
+            updateHomeDisplay(user);
+            setupBoostersUI(user);
         }
     });
 }
@@ -341,7 +317,7 @@ export async function initStudentPanel() {
     if (!user) return;
     
     startLiveGoldTracker(user.uid);
-    try { cachedShopItems = await getShopItems(user.teacherUid); } catch (e) { cachedShopItems = { micro: [], medium: [], large: [] }; }
+    try { cachedShopItems = await getShopItems(user.teacherUid); } catch (e) { }
     
     updateHomeDisplay(user);
     renderLeaderboard(user);
@@ -352,9 +328,10 @@ export async function initStudentPanel() {
         renderShopSection("rewards-medium-list", cachedShopItems.medium);
         renderShopSection("rewards-large-list", cachedShopItems.large);
     }
-    
     setupUnityUI();
 }
+
+
 
 // ==========================================
 // 🛠️ АДМІН-ФУНКЦІЇ, МАГАЗИН, ІНВЕНТАР, ЛІДЕРБОРД
@@ -437,21 +414,33 @@ function renderShopSection(containerId, items) {
     });
 }
 
-function buyItem(visualItem) {
+async function buyItem(visualItem) {
     let u = getCurrentUser();
+    if (!u) return;
+
     const realItem = findItemInList(cachedShopItems, visualItem.id);
     if (!realItem) return;
+
     if (u.profile.gold >= realItem.price) {
         if (!confirm(`Купити "${realItem.name}" за ${realItem.price} золота?`)) return;
+
+        // 1. Оновлюємо локальні дані
         u.profile.gold -= realItem.price;
         if (!u.profile.inventory) u.profile.inventory = [];
+        
         u.profile.inventory.push({ 
             id: realItem.id, 
             name: realItem.name, 
             date: new Date().toISOString() 
         });
-        saveUserData(u);
+
+        // 2. Зберігаємо в Firebase через нову функцію
+        await saveUserData(u);
+
+        // 3. Оновлюємо інтерфейс
+        localStorage.setItem("currentUser", JSON.stringify(u)); // оновлюємо кеш
         updateHomeDisplay(u);
+        
         alert(`Придбано: ${realItem.name}!`);
     } else {
         alert("Недостатньо золота!");
