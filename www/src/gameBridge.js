@@ -1,130 +1,163 @@
 import { db } from "./firebase.js"; 
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+import { doc, getDoc, updateDoc, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 let cachedPayload = null; 
 
-// ==========================================
-// 1. ОТРИМАННЯ ДАНИХ ТА ВІДПРАВКА
-// ==========================================
+// Допоміжна функція для пошуку теми без урахування регістру (Fractions == fractions)
+function findTopicCaseInsensitive(data, topic) {
+    if (!data) return null;
+    
+    // 1. Шукаємо в корені
+    let topicKey = Object.keys(data).find(k => k.toLowerCase() === topic.toLowerCase());
+    
+    // 2. Якщо не знайшли, шукаємо в під-об'єкті 'topics' (для сумісності старих структур)
+    if (!topicKey && data.topics) {
+        const subKeys = Object.keys(data.topics);
+        const subKey = subKeys.find(k => k.toLowerCase() === topic.toLowerCase());
+        if (subKey) return data.topics[subKey];
+    }
+
+    if (topicKey) return data[topicKey];
+    return null;
+}
+
+// Допоміжна функція для витягування конкретного рівня з даних теми
+function getLevelFromTopicData(topicData, level) {
+    if (!topicData) return null;
+
+    // Варіант А: Масив "doors" (як у вашій новій структурі)
+    if (topicData.doors && Array.isArray(topicData.doors)) {
+        return topicData.doors[level - 1]; 
+    }
+    
+    // Варіант Б: Об'єкт "1", "2" (стара структура)
+    if (typeof topicData === 'object') {
+        return topicData[level] || topicData[String(level)];
+    }
+    
+    return null;
+}
+
 export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) {
-    console.log(`📥 GameBridge: Завантаження... Teacher=${teacherId}, Topic=${topic}, Level=${level}`);
+    console.log(`🚀 GameBridge: Старт... Topic="${topic}", Teacher="${teacherId}", Level=${level}`);
 
     const iframe = document.getElementById("unity-iframe");
-    if (!iframe || !iframe.contentWindow) {
-        console.error("❌ GameBridge: Unity Iframe не знайдено!");
+    if (!iframe) {
+        console.warn("⚠️ GameBridge: Unity Iframe не знайдено.");
         return;
     }
 
-    // Базовий конфіг
     let finalConfig = {
-        reward: 50,     // Глобальний фоллбек
-        timeLimit: 300, // Глобальний фоллбек
-        doors: [],      // Сюди ми покладемо наші дані
-        topic: topic,
-        level: level,
-        teacherId: teacherId,
-        studentId: studentId
+        question: `Рівень ${level}: 2 + 2 = ?`, 
+        answer: "4",
+        wrongAnswers: ["5", "3", "1"],
+        time: 120,
+        reward: 10,
+        hasShield: false,
+        hasRadar: false,
+        hasExtraTime: false
     };
 
-    try {
-        const configRef = doc(db, "teacher_configs", teacherId);
-        const configSnap = await getDoc(configRef);
+    // ==========================================
+    // 🛡️ ЛОГІКА БУСТЕРІВ (СПИСАННЯ З МАСИВУ)
+    // ==========================================
+    const selectedBoosterIds = Array.from(document.querySelectorAll('.booster-checkbox:checked'))
+                                    .map(cb => cb.value);
+    
+    if (selectedBoosterIds.length > 0 && studentId) {
+        try {
+            const studentRef = doc(db, "users", studentId);
+            const studentSnap = await getDoc(studentRef);
 
-        if (configSnap.exists()) {
-            const data = configSnap.data();
-            
-            // 1. Шукаємо тему
-            let topicData = data[topic]; 
-            if (!topicData && data.topics) {
-                topicData = data.topics[topic];
+            if (studentSnap.exists()) {
+                const studentData = studentSnap.data();
+                // У вас інвентар лежить в profile.inventory
+                const inventory = studentData.profile?.inventory || [];
+                const toRemove = [];
+
+                selectedBoosterIds.forEach(id => {
+                    // Знаходимо ПОВНИЙ об'єкт у масиві, бо arrayRemove видаляє лише при повному збігу
+                    const itemObject = inventory.find(i => i.id === id);
+                    
+                    if (itemObject) {
+                        toRemove.push(itemObject);
+                        
+                        // Вмикаємо прапорці для Unity
+                        if (id === 'sys_shield') finalConfig.hasShield = true;
+                        if (id === 'sys_radar') finalConfig.hasRadar = true;
+                        if (id === 'sys_time') finalConfig.hasExtraTime = true;
+                    }
+                });
+
+                if (toRemove.length > 0) {
+                    await updateDoc(studentRef, {
+                        "profile.inventory": arrayRemove(...toRemove)
+                    });
+                    console.log("💎 Бустери списано з бази:", toRemove.map(i => i.id));
+                }
             }
+        } catch (e) {
+            console.error("❌ Помилка списання бустерів:", e);
+            // Зупиняємо запуск, якщо не вдалося списати (захист від накрутки)
+            return; 
+        }
+    }
+    // ==========================================
 
-            if (topicData) {
-                console.log(`📂 Дані теми знайдено. Структура:`, topicData);
-                
-                let foundDoors = []; // Тимчасова змінна для дверей
-
-                // =========================================================
-                // 🔍 ЛОГІКА ВИЗНАЧЕННЯ СТРУКТУРИ (Виправлена)
-                // =========================================================
-
-                // ВАРІАНТ 1: Класичний (всередині теми є масив "doors") -> Це твій "Fractions"
-                if (topicData.doors && Array.isArray(topicData.doors)) {
-                    console.log("✅ Тип: Standard 'doors' array");
-                    // Ми беремо ВЕСЬ масив, бо C# сам знайде потрібний ID всередині
-                    foundDoors = topicData.doors; 
+    let foundTask = null;
+    try {
+        // --- 1. ПЕРЕВІРКА ВЧИТЕЛЯ ---
+        if (teacherId) {
+            const teacherRef = doc(db, "teacher_configs", teacherId);
+            const teacherSnap = await getDoc(teacherRef);
+            if (teacherSnap.exists()) {
+                const topicData = findTopicCaseInsensitive(teacherSnap.data(), topic);
+                if (topicData) {
+                    foundTask = getLevelFromTopicData(topicData, level);
                 }
-                
-                // ВАРІАНТ 2: Сама тема є масивом рівнів [Level1, Level2]
-                else if (Array.isArray(topicData)) {
-                    console.log("✅ Тип: Array of levels");
-                    const idx = level - 1;
-                    if (topicData[idx]) {
-                        // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив, щоб C# його з'їв
-                        foundDoors = [ topicData[idx] ]; 
-                    }
-                }
-                
-                // ВАРІАНТ 3: Сама тема є об'єктом рівнів {"1": {...}, "2": {...}}
-                else if (typeof topicData === 'object') {
-                    console.log("✅ Тип: Object map");
-                    let specificLevel = topicData[level] || topicData[String(level)];
-                    if (specificLevel) {
-                         // 🔥 ВАЖЛИВО: Загортаємо один рівень в масив
-                        foundDoors = [ specificLevel ];
-                    }
-                }
-
-                // =========================================================
-                // 📤 ФОРМУВАННЯ ФІНАЛЬНОГО ОБ'ЄКТА
-                // =========================================================
-                
-                // Якщо ми знайшли двері (або одну, або список)
-                if (foundDoors.length > 0) {
-                    finalConfig.doors = foundDoors;
-                    
-                    // Спробуємо витягнути глобальні налаштування теми, якщо вони є
-                    if (topicData.reward) finalConfig.reward = parseInt(topicData.reward);
-                    if (topicData.timeLimit) finalConfig.timeLimit = parseInt(topicData.timeLimit);
-                    
-                    console.log(`🎯 УСПІХ! Відправляємо дверей: ${finalConfig.doors.length}`);
-                    
-                    // Лог для перевірки, чи є reward всередині дверей
-                    const targetDoor = finalConfig.doors.find(d => d.id == level);
-                    if(targetDoor) {
-                        console.log(`🧐 Перевірка для рівня ${level}: Reward=${targetDoor.reward}, Time=${targetDoor.timeLimit}`);
-                    }
-                } else {
-                    console.warn(`⚠️ Рівень ${level} не знайдено в темі!`);
-                }
-
-            } else {
-                console.warn(`⚠️ Тему '${topic}' не знайдено.`);
             }
         }
-    } catch (error) {
-        console.error("❌ ERROR Config:", error);
-    }
 
+        // --- 2. ГЛОБАЛЬНИЙ КОНФІГ ---
+        if (!foundTask) {
+            const globalRef = doc(db, "global_config", "game_levels");
+            const globalSnap = await getDoc(globalRef);
+            if (globalSnap.exists()) {
+                const topicData = findTopicCaseInsensitive(globalSnap.data(), topic);
+                if (topicData) {
+                    foundTask = getLevelFromTopicData(topicData, level);
+                }
+            }
+        }
+
+        if (foundTask) {
+            finalConfig.question = foundTask.question || "Питання?";
+            finalConfig.answer = String(foundTask.answer || "0");
+            if (Array.isArray(foundTask.wrongAnswers)) {
+                finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
+            }
+            
+            finalConfig.time = foundTask.timeLimit ? parseInt(foundTask.timeLimit) : 120;
+            
+            if (foundTask.reward !== undefined) finalConfig.reward = parseInt(foundTask.reward);
+        }
+    } catch (err) { console.error(err); }
+
+    // --- 4. ВІДПРАВКА ---
     const payload = JSON.stringify(finalConfig);
-    cachedPayload = payload; // Зберігаємо для ретраю
+    cachedPayload = payload;
+    const unityGame = iframe.contentWindow.unityInstance;
 
-    console.log("📤 Sending JSON to Unity:", payload);
-    
-    iframe.contentWindow.postMessage({ 
-        type: "CONFIG_RESPONSE", 
-        payload: payload 
-    }, "*");
+    if (unityGame) {
+        console.log("✅ Відправка до GameManager:", finalConfig);
+        unityGame.SendMessage("GameManager", "AcceptConfig", payload);
+    }
 }
 
-// Функція для повторної відправки (якщо Unity завантажилась пізніше)
-window.trySendToUnity = function() { // Робимо доступною глобально про всяк випадок
+// Для повторної відправки
+window.trySendToUnity = function() { 
     if (!cachedPayload) return;
-    let unityFrame = document.getElementById("unity-iframe");
-    if (unityFrame && unityFrame.contentWindow) {
-        unityFrame.contentWindow.postMessage({ 
-            type: "CONFIG_RESPONSE", 
-            payload: cachedPayload 
-        }, "*");
+    const iframe = document.getElementById("unity-iframe");
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(cachedPayload, "*");
     }
 };

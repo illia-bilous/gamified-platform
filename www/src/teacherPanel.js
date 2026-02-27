@@ -197,20 +197,37 @@ async function renderStudentProfile(student) {
 
     // --- (Код підготовки інвентаря) ---
     const inventory = student.profile?.inventory || [];
+    
     const stackedInventory = inventory.reduce((acc, item) => {
         const itemName = item.name || 'Нагорода';
-        acc[itemName] = (acc[itemName] || 0) + 1;
+        if (!acc[itemName]) {
+            acc[itemName] = { 
+                count: 0, 
+                // Визначаємо системний предмет по ID (sys_) або прапорцю
+                isSystem: (item.id && String(item.id).startsWith('sys_')) || item.isSystem 
+            };
+        }
+        acc[itemName].count += 1;
         return acc;
     }, {});
 
     const inventoryListHtml = Object.keys(stackedInventory).length > 0
-        ? Object.keys(stackedInventory).map(name => `
-            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
-                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${stackedInventory[name]})</b></span>
-                <button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
+        ? Object.keys(stackedInventory).map(name => {
+            const data = stackedInventory[name];
+            
+            // Якщо системний — показуємо мітку, якщо звичайна нагорода — кнопку видалення
+            const actionHtml = data.isSystem 
+                ? `<span style="color: #2ecc71; font-size: 0.8em; font-weight: bold; margin-left: 10px; background: rgba(46, 204, 113, 0.1); padding: 4px 8px; border-radius: 4px; border: 1px solid #2ecc71;">⚡ БУСТЕР</span>`
+                : `<button class="btn-delete-reward" data-name="${name}" style="background: #c0392b; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em; margin-left: 10px;">
                     🗑️ Списати
-                </button>
-            </div>`).join('')
+                   </button>`;
+
+            return `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(44, 62, 80, 0.7); padding: 10px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3498db;">
+                <span style="color: #ecf0f1; font-size: 0.9em;">${name} <b style="color: #f1c40f;">(x${data.count})</b></span>
+                ${actionHtml}
+            </div>`;
+        }).join('')
         : '<p style="opacity: 0.5; font-style: italic; padding: 20px; text-align: center;">Нагороди ще не придбані</p>';
         
     const goldDisplay = student.profile?.gold || 0; 
@@ -421,7 +438,7 @@ async function renderLevelEditor() {
                 <select id="editor-topic" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="Fractions">Тема: Дроби</option>
                     <option value="Powers">Тема: Степені</option>
-                    <option value="Equations">Тема: Рівняння</option>
+                    <option value="Quadratics">Тема: Рівняння</option>
                 </select>
                 <select id="editor-level" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
                     <option value="1">Рівень 1 (Легкий)</option>
@@ -537,7 +554,9 @@ function setupLevelEditorLogic() {
     // ==========================================
     btnSave.onclick = async () => {
         const topic = document.getElementById("editor-topic").value;
-        const levelNum = parseInt(document.getElementById("editor-level").value);
+        const levelNum = parseInt(document.getElementById("editor-level").value); // Наприклад, 1, 2 або 3
+        
+        // Збираємо неправильні відповіді, фільтруємо пусті
         const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
 
         if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
@@ -547,49 +566,46 @@ function setupLevelEditorLogic() {
         try {
             const docRef = doc(db, "teacher_configs", user.uid);
             const docSnap = await getDoc(docRef);
+            
+            // Отримуємо поточні дані або створюємо пустий об'єкт
             let currentData = docSnap.exists() ? docSnap.data() : {};
+            
+            // Переконуємось, що структура теми існує
+            if (!currentData[topic]) currentData[topic] = {};
+            
+            // Переконуємось, що масив doors існує
+            if (!Array.isArray(currentData[topic].doors)) currentData[topic].doors = [];
+            
+            let doors = currentData[topic].doors;
 
-            // Створюємо тему, якщо її немає
-            if (!currentData[topic]) {
-                currentData[topic] = { doors: [] };
-            }
-
-            // 🔥 ВИПРАВЛЕННЯ: Формуємо об'єкт рівня з reward і timeLimit
+            // Формуємо об'єкт рівня
             const doorData = {
                 id: levelNum,
                 question: qInput.value.trim(),
                 answer: cInput.value.trim(),
                 wrongAnswers: wrongs,
-                reward: parseInt(goldInput.value) || 50,      // <--- ТЕПЕР ВОНО ТУТ
-                timeLimit: parseInt(timeInput.value) || 120   // <--- І ТУТ
+                reward: parseInt(goldInput.value) || 50,
+                timeLimit: parseInt(timeInput.value) || 120
             };
 
-            // Отримуємо поточний масив дверей
-            let doors = currentData[topic].doors || [];
-            if (!Array.isArray(doors)) doors = []; // Захист від глюків
-
-            // Шукаємо, чи є вже такий рівень, щоб оновити його
-            const index = doors.findIndex(d => d.id === levelNum);
+            // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ:
+            // Записуємо строго у відповідний індекс (рівень 1 -> індекс 0)
+            // Це гарантує, що Unity знайде правильний рівень, навіть якщо ми зберегли їх не по порядку.
+            const index = levelNum - 1;
             
-            if (index > -1) {
-                doors[index] = doorData; // Оновлюємо існуючий
-            } else {
-                doors.push(doorData);    // Додаємо новий
-            }
+            doors[index] = doorData;
 
-            // Записуємо назад у тему
-            currentData[topic].doors = doors;
-            
-            // (Опціонально) Можна прибрати запис reward у корінь теми, 
-            // щоб не плутати базу даних, або залишити як дефолтне значення.
-            // Я залишаю це чистим — дані тепер тільки в doors.
+            // Зберігаємо (merge: true не видалить інші теми цього вчителя)
+            await setDoc(docRef, { 
+                [topic]: { doors: doors } 
+            }, { merge: true });
 
-            await setDoc(docRef, currentData);
-            
-            statusText.textContent = "✅ Збережено для гри!";
+            console.log(`✅ Saved Level ${levelNum} at index ${index} for topic ${topic}`);
+            statusText.textContent = `✅ Збережено в тему "${topic}"!`;
+    
         } catch (e) {
             console.error("Помилка Firebase:", e);
-            statusText.textContent = "❌ Помилка збереження.";
+            statusText.textContent = "❌ Помилка збереження: " + e.message;
         }
     };
 }
@@ -639,16 +655,24 @@ async function renderTreasureEditor() {
     refreshEditor();
 }
 
+function getBoosterIcon(name) {
+    const n = name.toLowerCase();
+    if (n.includes("щит")) return "🛡️";
+    if (n.includes("час")) return "⏳";
+    if (n.includes("радар") || n.includes("підказка")) return "📡";
+    return "⚡"; // Дефолтна іконка для інших системних штук
+}
+
 function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color, onRefresh) {
     const col = document.createElement("div");
-    col.style.cssText = "flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
+    col.style.cssText = `flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid ${color}; display: flex; flex-direction: column; gap: 15px;`;
     
     if (!fullShopData[categoryKey]) fullShopData[categoryKey] = [];
     const list = fullShopData[categoryKey];
 
     col.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
-            <h3 style="color: ${color}; margin:0;">${title}</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 5px;">
+            <h3 style="color: ${color}; margin:0; text-transform: uppercase; font-size: 1.1em;">${title}</h3>
             <span style="font-size: 0.8em; color: #777;">${list.length}/10</span>
         </div>
     `;
@@ -657,100 +681,118 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
     col.appendChild(cardsContainer);
 
     list.forEach((item, index) => {
+        // Визначаємо, чи це системний бустер
+        const isBooster = (item.id && String(item.id).startsWith('sys_')) || item.isSystem;
+        const boosterIcon = isBooster ? getBoosterIcon(item.name) : "";
+
         const card = document.createElement("div");
-        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; position: relative;";
-        
-        card.innerHTML = `
-            <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.75em; color: #777;">Назва:</label>
-                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 6px; background: #111; color: white; border: 1px solid #444; border-radius: 4px;">
-            </div>
-            
-            <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.75em; color: #777;">Опис:</label>
-                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 6px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px;">
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 10px;">
-                <div style="flex-grow: 1;">
-                    <label style="font-size: 0.75em; color: #f1c40f;">Ціна:</label>
-                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
-                </div>
-                
-                <button class="btn-save" style="padding: 6px 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">💾</button>
-                
-                <button class="btn-delete" style="padding: 6px 12px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">🗑️</button>
-            </div>
-            <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+        card.style.cssText = `
+            background: ${isBooster ? '#172e16' : '#252525'}; 
+            padding: 15px; 
+            margin-bottom: 15px; 
+            border-radius: 8px; 
+            border: 1px solid ${isBooster ? '#5bdb34' : '#333'}; 
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         `;
+        
+        // Внутрішня розмітка залежить від типу (бустер чи нагорода)
+        if (isBooster) {
+            // КОНТЕНТ ДЛЯ БУСТЕРА (Тільки ціна + замок)
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span style="font-weight: bold; color: #18e0e7; font-size: 0.95em;">${boosterIcon} ${item.name}</span>
+                    <span title="Системний предмет (не можна видалити або перейменувати)" style="cursor: help; opacity: 0.6;">🔒</span>
+                </div>
+                <p style="font-size: 0.8em; color: #aaa; margin: 0 0 10px 0;">${item.desc || 'Системний підсилювач'}</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="flex-grow: 1;">
+                        <label style="font-size: 0.7em; color: #f1c40f; display: block; margin-bottom: 2px;">Вартість:</label>
+                        <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #0d151f; color: #f1c40f; border: 1px solid #3498db; border-radius: 4px; font-weight: bold;">
+                    </div>
+                    <button class="btn-save" style="align-self: flex-end; padding: 7px 12px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">💾</button>
+                </div>
+                <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+            `;
+        } else {
+            // КОНТЕНТ ДЛЯ ЗВИЧАЙНОЇ НАГОРОДИ (Повне редагування)
+            card.innerHTML = `
+                <div style="margin-bottom: 8px;">
+                    <label style="font-size: 0.7em; color: #777;">Назва:</label>
+                    <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 5px; background: #111; color: white; border: 1px solid #444; border-radius: 4px; font-size: 0.9em;">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label style="font-size: 0.7em; color: #777;">Опис:</label>
+                    <input type="text" class="inp-desc" value="${item.desc || ''}" style="width: 100%; padding: 5px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 8px;">
+                    <div style="flex-grow: 1;">
+                        <label style="font-size: 0.7em; color: #f1c40f;">Ціна:</label>
+                        <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 5px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
+                    </div>
+                    <button class="btn-save" style="padding: 6px 10px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer;">💾</button>
+                    <button class="btn-delete" style="padding: 6px 10px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+                </div>
+                <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+            `;
+        }
 
-        card.querySelector(".btn-delete").onclick = async () => {
-            if (confirm(`Видалити "${item.name}"?`)) {
-                list.splice(index, 1); 
-                await onSave(fullShopData); 
-                onRefresh(); 
-            }
-        };
-
+        // Логіка кнопок (однакова для обох типів, але з перевіркою полів)
         const btnSave = card.querySelector(".btn-save");
         btnSave.onclick = async () => {
-            const newName = card.querySelector(".inp-name").value;
-            const newDesc = card.querySelector(".inp-desc").value;
-            const newPrice = parseInt(card.querySelector(".inp-price").value);
             const msg = card.querySelector(".feedback-msg");
+            const newPrice = parseInt(card.querySelector(".inp-price").value);
+            
+            if (isNaN(newPrice)) return alert("Вкажіть коректну ціну!");
 
-            if (!newName || isNaN(newPrice)) return alert("Заповніть назву та ціну!");
+            let updateData = { ...item, price: newPrice };
+
+            // Якщо це не бустер, оновлюємо ще й текст
+            if (!isBooster) {
+                const newName = card.querySelector(".inp-name").value;
+                const newDesc = card.querySelector(".inp-desc").value;
+                if (!newName) return alert("Назва не може бути порожньою!");
+                updateData.name = newName;
+                updateData.desc = newDesc;
+            }
 
             btnSave.textContent = "⏳";
-            
-            list[index] = { ...item, name: newName, desc: newDesc, price: newPrice };
+            list[index] = updateData;
             
             await onSave(fullShopData);
             
             btnSave.textContent = "💾";
-            msg.textContent = "Збережено!";
+            msg.textContent = "Збережено успішно!";
             msg.style.color = "#2ecc71";
             setTimeout(() => msg.textContent = "", 2000);
         };
 
+        if (!isBooster) {
+            card.querySelector(".btn-delete").onclick = async () => {
+                if (confirm(`Видалити "${item.name}"?`)) {
+                    list.splice(index, 1);
+                    await onSave(fullShopData);
+                    onRefresh();
+                }
+            };
+        }
+
         cardsContainer.appendChild(card);
     });
 
-    // 2. КНОПКА "ДОДАТИ НОВИЙ"
+    // Кнопка додавання
     if (list.length < 10) {
         const addBtn = document.createElement("button");
         addBtn.innerText = "➕ Додати нагороду";
-        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s;`;
-        
-        addBtn.onmouseover = () => addBtn.style.background = "rgba(255,255,255,0.05)";
-        addBtn.onmouseout = () => addBtn.style.background = "transparent";
-        
+        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px;`;
         addBtn.onclick = async () => {
-            // Створюємо новий шаблон товару
-            // Генеруємо унікальний ID, використовуючи час + випадкове число
             const newId = categoryKey + "_" + Date.now(); 
-            
-            const newItem = {
-                id: newId,
-                name: "Нова нагорода",
-                desc: "Опис нагороди",
-                price: 100
-            };
-
-            list.push(newItem); // Додаємо в кінець масиву
-            
+            list.push({ id: newId, name: "Нова нагорода", desc: "", price: 100 });
             addBtn.innerText = "⏳ Додавання...";
-            await onSave(fullShopData); // Зберігаємо
-            onRefresh(); // Перемальовуємо, щоб з'явилась нова картка
+            await onSave(fullShopData);
+            onRefresh();
         };
-
         col.appendChild(addBtn);
-    } else {
-        // Якщо ліміт досягнуто
-        const limitMsg = document.createElement("div");
-        limitMsg.innerText = "Максимум 10 нагород досягнуто";
-        limitMsg.style.cssText = "text-align: center; color: #555; font-size: 0.9em; padding: 10px; border: 1px dashed #444; border-radius: 8px;";
-        col.appendChild(limitMsg);
     }
 
     parent.appendChild(col);

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gamified Learning Platform</title>
     <link rel="stylesheet" href="assets/css/styles.css"> 
-    </head>
+</head>
 <body>
 
     <section id="screen-home" class="screen active">
@@ -15,10 +15,6 @@
             <div class="button-group">
                 <button id="btn-role-student" class="btn large primary">Я — Учень</button>
                 <button id="btn-role-teacher" class="btn large secondary">Я — Вчитель</button>
-            </div>
-
-            <div style="margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px;">
-                
             </div>
         </div>
     </section>
@@ -96,7 +92,7 @@
             <div id="register-success" class="card success hidden" style="text-align: center;">
                 <h3 style="color: #2ecc71;">✅ Успіх!</h3>
                 <div id="new-login-display" style="background: #333; padding: 15px; margin: 20px 0; border-radius: 8px; border: 2px dashed #f1c40f;">
-                    </div>
+                </div>
                 <button id="btn-go-to-login" class="btn secondary">Перейти до входу</button>
             </div>
         </div>
@@ -109,29 +105,31 @@
                 <h3>🧑‍🎓 Кабінет Учня</h3>
             </div>
 
-         <div class="sidebar-profile-info"> 
-            <div class="profile-section">
-                <div class="avatar-wrapper">
-                    <img id="current-user-avatar" src="assets/img/base.png" alt="Avatar" class="main-avatar">
-                    
-                    <button id="btn-edit-avatar" class="edit-avatar-btn" type="button">
-                        ✏️
-                    </button>
+            <div class="sidebar-profile-info"> 
+                <div class="profile-section">
+                    <div class="avatar-wrapper">
+                        <img id="current-user-avatar" src="assets/img/base.png" alt="Avatar" class="main-avatar">
+                        <button id="btn-edit-avatar" class="edit-avatar-btn" type="button">✏️</button>
+                    </div>
+                </div>
+
+                <h4 id="student-name-display">Завантаження...</h4>
+                <div id="student-class-display" class="class-badge">--</div>
+                
+                <div class="coin-balance-sidebar">
+                    💰 <span id="student-gold-display">0</span>
                 </div>
             </div>
-
-            <h4 id="student-name-display">Завантаження...</h4>
-            <div id="student-class-display" class="class-badge">--</div>
-            
-            <div class="coin-balance-sidebar">
-                💰 <span id="student-gold-display">0</span>
-            </div>
-        </div>
 
             <nav class="sidebar-nav">
                 <button class="menu-item active" data-panel="home">
                     🏠 Головна
                 </button>
+                
+                <button class="menu-item" data-panel="journal">
+                    📓 Щоденник
+                </button>
+
                 <button class="menu-item" data-panel="treasury">
                     💰 Скарбниця
                 </button>
@@ -141,7 +139,7 @@
                 </button>
 
                 <button class="menu-item" data-panel="profile">
-                    👤 Інвентар
+                    🎒 Інвентар
                 </button>
 
                 <div class="spacer"></div> 
@@ -154,75 +152,102 @@
 
         <main id="student-panel" class="main-panel">
     
-    <div id="view-home" class="panel-view active">
-        <div style="height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-            
-            <div class="page-header-container">
-                <h2 class="page-header-title">🏠 Головна </h2>
-                <div class="page-header-line"></div>
-                <p class="page-header-description">Ласкаво просимо до вашого командного центру. Готові до навчання?</p>
-            </div>
+            <div id="view-home" class="panel-view active">
+                <div style="height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                    <div class="page-header-container">
+                        <h2 class="page-header-title">🏠 Головна </h2>
+                        <div class="page-header-line"></div>
+                        <p class="page-header-description">Ласкаво просимо до вашого командного центру. Готові до навчання?</p>
+                    </div>
 
-            <div class="game-wrapper" style="width: 100%; max-width: 1200px; text-align: center;">
-                <button id="btn-start-lesson" class="btn-primary" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
-                    ▶ ПОЧАТИ УРОК
-                </button>
-                <div id="unity-container" class="hidden" style="width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 15px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); margin-top: 20px;">
+                    <div class="game-wrapper" style="width: 100%; max-width: 1200px; text-align: center;">
+    
+                        <div id="boosters-container" style="margin-bottom: 20px; display: flex; justify-content: center; gap: 15px; min-height: 40px;"></div>
+
+                        <button id="btn-start-lesson" class="btn-primary" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
+                            ▶ ПОЧАТИ УРОК
+                        </button>
+                        
+                        <div id="unity-container" class="hidden">
+                            <iframe id="unity-iframe" 
+                                    src="about:blank" 
+                                    allowfullscreen="true"
+                                    webkitallowfullscreen="true"
+                                    mozallowfullscreen="true"
+                                    style="width: 960px; height: 600px; border: none; margin-top: 20px; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                            </iframe>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <div id="view-treasury" class="panel-view hidden">
-        
-        <div class="page-header-container">
-            <h2 class="page-header-title">💰 Скарбниця Гільдії</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Витрачайте зароблене золото на корисні бонуси та нагороди.</p>
-        </div>
+            <div id="view-journal" class="panel-view hidden">
+                <div class="page-header-container">
+                    <h2 class="page-header-title">📓 Мій Щоденник</h2>
+                    <div class="page-header-line"></div>
+                    <p class="page-header-description">Історія твоїх успіхів, оцінок та пройдених рівнів.</p>
+                </div>
 
-        <div class="treasury-grid">
-            <div class="reward-column">
-                <div class="section-sub-header">Мікро-нагороди</div>
-                <div id="rewards-micro-list"></div>
+                <div class="journal-container" style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 10px; margin-top: 20px;">
+                    <table class="leaderboard-table" style="width: 100%;">
+                        <thead>
+                            <tr style="color: #aaa; text-align: left;">
+                                <th style="padding: 10px;">Дата</th>
+                                <th>Рівень</th>
+                                <th>Час</th>
+                                <th>Помилки</th>
+                                <th style="color: #f1c40f;">Золото</th>
+                                <th>Оцінка</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-journal-tbody">
+                            <tr><td colspan="6" style="text-align:center; padding: 30px; color:#777;">Історія пуста...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <div class="reward-column">
-                <div class="section-sub-header">Середні нагороди</div>
-                <div id="rewards-medium-list"></div>
+
+            <div id="view-treasury" class="panel-view hidden">
+                <div class="page-header-container">
+                    <h2 class="page-header-title">💰 Скарбниця Гільдії</h2>
+                    <div class="page-header-line"></div>
+                    <p class="page-header-description">Витрачайте зароблене золото на корисні бонуси та нагороди.</p>
+                </div>
+
+                <div class="treasury-grid">
+                    <div class="reward-column">
+                        <div class="section-sub-header">Мікро-нагороди</div>
+                        <div id="rewards-micro-list"></div>
+                    </div>
+                    <div class="reward-column">
+                        <div class="section-sub-header">Середні нагороди</div>
+                        <div id="rewards-medium-list"></div>
+                    </div>
+                    <div class="reward-column">
+                        <div class="section-sub-header">Великі нагороди</div>
+                        <div id="rewards-large-list"></div>
+                    </div>
+                </div>
             </div>
-            <div class="reward-column">
-                <div class="section-sub-header">Великі нагороди</div>
-                <div id="rewards-large-list"></div>
+
+            <div id="view-leaderboard" class="panel-view hidden">
+                <div style="height: 100%; display: flex; justify-content: center; align-items: center; min-height: 400px;">
+                     <h2 style="color: #777;">⏳ Завантаження рейтингу...</h2>
+                </div>
             </div>
-        </div>
-    </div>
 
-    <div id="view-leaderboard" class="panel-view hidden">
-        
-        <div class="page-header-container">
-            <h2 class="page-header-title">🏆 Таблиця Лідерів</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Рейтинг найкращих учнів класу. Змагайтеся за першість!</p>
-        </div>
+            <div id="view-profile" class="panel-view hidden">
+                <div class="page-header-container">
+                    <h2 class="page-header-title">🎒 Мій Інвентар</h2>
+                    <div class="page-header-line"></div>
+                    <p class="page-header-description">Тут зберігаються всі ваші куплені предмети та бонуси.</p>
+                </div>
 
-        <div style="text-align: center; margin-top: 50px;">
-            <p style="color: #ccc; font-size: 1.2em;">Завантаження рейтингу...</p>
-        </div>
-    </div>
+                <ul id="student-inventory-list" class="inventory-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+                </ul>
+            </div>
 
-    <div id="view-profile" class="panel-view hidden">
-        
-        <div class="page-header-container">
-            <h2 class="page-header-title">🎒 Мій Інвентар</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Тут зберігаються всі ваші куплені предмети та бонуси.</p>
-        </div>
-
-        <ul id="student-inventory-list" class="inventory-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
-        </ul>
-    </div>
-
-</main>
+        </main>
     </section>
 
     <section id="screen-teacher" class="screen dashboard">
@@ -253,7 +278,8 @@
                     📊 Аналітика
                 </button>
                 
-                <div class="spacer"></div> <button id="logout-teacher" class="menu-item logout">
+                <div class="spacer"></div> 
+                <button id="logout-teacher" class="menu-item logout">
                     🚪 Вихід
                 </button>
             </nav>
@@ -261,106 +287,106 @@
 
         <main id="teacher-panel" class="main-panel">
     
-    <div id="view-classes" class="panel-view active">
-        <div id="teacher-content">
-             </div>
-    </div>
-        
-    <div id="view-tasks" class="panel-view hidden">
-        
-        <div class="page-header-container">
-            <h2 class="page-header-title">📝 Редактор завдань</h2>
-            <div class="page-header-line"></div>
-            <p class="page-header-description">Налаштуйте питання, час та нагороду для кожного рівня гри.</p>
-        </div>
-        
-        <div class="card-content" style="max-width: 900px; margin: 0 auto; background: #222; color: white;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px dashed #555; padding-bottom: 15px;">
-                <div>
-                    <label style="color: var(--accent-gold);">💰 Нагорода за рівень:</label>
-                    <input type="number" id="maze-global-reward" value="100" style="width: 100px; background: #333; color: white; border: 1px solid #555; text-align: center;">
+            <div id="view-classes" class="panel-view active">
+                <div id="teacher-content"></div>
+            </div>
+                
+            <div id="view-tasks" class="panel-view hidden">
+                <div class="page-header-container">
+                    <h2 class="page-header-title">📝 Редактор завдань</h2>
+                    <div class="page-header-line"></div>
+                    <p class="page-header-description">Налаштуйте питання, час та нагороду для кожного рівня гри.</p>
                 </div>
-                <div style="font-size: 0.9em; color: #aaa;">
-                    Поточний рівень: <strong>Лабіринт 1 (3 Дверей)</strong>
+                
+                <div class="card-content" style="max-width: 900px; margin: 0 auto; background: #222; color: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px dashed #555; padding-bottom: 15px;">
+                        <div>
+                            <label style="color: var(--accent-gold);">💰 Нагорода за рівень:</label>
+                            <input type="number" id="maze-global-reward" value="100" style="width: 100px; background: #333; color: white; border: 1px solid #555; text-align: center;">
+                        </div>
+                        <div style="font-size: 0.9em; color: #aaa;">
+                            Поточний рівень: <strong>Лабіринт 1 (3 Дверей)</strong>
+                        </div>
+                    </div>
+
+                    <div id="maze-doors-container" style="display: flex; flex-direction: column; gap: 15px;">
+                    </div>
+
+                    <button id="btn-save-maze-config" class="btn" style="background-color: #27ae60; color: white; margin-top: 30px; font-size: 1.2em;">
+                        💾 ЗБЕРЕГТИ КОНФІГУРАЦІЮ
+                    </button>
+                    <p id="maze-save-status" style="margin-top: 10px; color: var(--accent-green); display: none; text-align: center;">✅ Дані записано! Запустіть гру.</p>
                 </div>
             </div>
 
-            <div id="maze-doors-container" style="display: flex; flex-direction: column; gap: 15px;">
+            <div id="view-treasury-editor" class="panel-view hidden">
+                <div id="treasury-content"></div>
             </div>
 
-            <button id="btn-save-maze-config" class="btn" style="background-color: #27ae60; color: white; margin-top: 30px; font-size: 1.2em;">
-                💾 ЗБЕРЕГТИ КОНФІГУРАЦІЮ
-            </button>
-            <p id="maze-save-status" style="margin-top: 10px; color: var(--accent-green); display: none; text-align: center;">✅ Дані записано! Запустіть гру.</p>
-        </div>
-    </div>
+            <div id="view-analytics" class="panel-view hidden">
+            
+                <div class="page-header-container">
+                    <h2 class="page-header-title">📊 Аналітика</h2>
+                    <div class="page-header-line"></div>
+                    <p class="page-header-description">Оберіть клас, щоб переглянути успішність учнів та детальний журнал.</p>
+                </div>
 
-    <div id="view-treasury-editor" class="panel-view hidden">
-        <div id="treasury-content"></div>
-    </div>
+                <div class="analytics-controls-bar">
+                    <label for="analytics-class-filter">Клас:</label>
+                    <select id="class-filter-select">
+                        <option value="" disabled selected>-- Оберіть клас --</option>
+                        <option value="8-А">8-А</option>
+                        <option value="8-Б">8-Б</option>
+                        <option value="8-В">8-В</option>
+                        <option value="8-Г">8-Г</option>
+                    </select>
+                </div>
 
-    <div id="view-analytics" class="panel-view hidden">
-    
-    <div class="page-header-container">
-        <h2 class="page-header-title">📊 Аналітика</h2>
-        <div class="page-header-line"></div>
-        <p class="page-header-description">Оберіть клас, щоб переглянути успішність учнів та детальний журнал.</p>
-    </div>
+                <div class="leaderboard-wrapper">
+                    <table class="leaderboard-table" id="analytics-main-table">
+                        <thead>
+                            <tr>
+                                <th>Учень</th>
+                                <th>Клас</th>
+                                <th>Логін (ID)</th>
+                                <th class="gold-col">Загальне Золото 💰</th>
+                                <th style="text-align: center;">Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analytics-tbody">
+                        </tbody>
+                    </table>
+                </div>
 
-    <div class="analytics-controls-bar">
-        <label for="analytics-class-filter">Клас:</label>
-       <select id="class-filter-select">
-            <option value="" disabled selected>-- Оберіть клас --</option>
-            <option value="8-A">8-A</option>
-            <option value="8-Б">8-Б</option>
-            <option value="8-B">8-В</option>
-        </select>
-    </div>
+                <div id="student-journal-panel" class="journal-panel hidden">
+                    <h3 id="journal-student-name" class="journal-header">Історія: Учень</h3>
+                    
+                    <table class="leaderboard-table journal-history-table">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Рівень</th>
+                                <th>Статус</th>
+                                <th>Помилки</th>
+                                <th>Час</th>
+                                <th>Золото</th>
+                                <th>Оцінка</th>
+                            </tr>
+                        </thead>
+                        <tbody id="journal-history-tbody">
+                        </tbody>
+                    </table>
+                </div>
 
-    <div class="leaderboard-wrapper">
-        <table class="leaderboard-table" id="analytics-main-table">
-            <thead>
-                <tr>
-                    <th>Учень</th>
-                    <th>Клас</th>
-                    <th>Логін (ID)</th>
-                    <th class="gold-col">Загальне Золото 💰</th>
-                    <th style="text-align: center;">Дії</th>
-                </tr>
-            </thead>
-            <tbody id="analytics-tbody">
-                </tbody>
-        </table>
-    </div>
-
-    <div id="student-journal-panel" class="journal-panel hidden">
-        <h3 id="journal-student-name" class="journal-header">Історія: Учень</h3>
-        
-        <table class="leaderboard-table journal-history-table">
-            <thead>
-                <tr>
-                    <th>Дата</th>
-                    <th>Рівень</th>
-                    <th>Статус</th>
-                    <th>Помилки</th>
-                    <th>Час</th>
-                    <th>Золото</th>
-                    <th>Оцінка</th>
-                </tr>
-            </thead>
-            <tbody id="journal-history-tbody">
-                </tbody>
-        </table>
-    </div>
-
-</div>
-</main>
+            </div>
+        </main>
     </section>
 
     <div id="avatar-modal-container"></div>
 
     <script type="module" src="src/firebase.js"></script>
     <script type="module" src="src/router.js"></script>
+    <script type="module" src="src/studentPanel.js"></script>
     <script type="module" src="src/gameBridge.js"></script>
 </body>
 </html>

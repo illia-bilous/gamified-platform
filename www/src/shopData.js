@@ -1,90 +1,107 @@
 import { db } from "./firebase.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ЗАПАСНІ ДАНІ (FALLBACK)
-// Використовуються ТІЛЬКИ якщо немає інтернету або база пуста
-const FALLBACK_ITEMS = {
+// 1. СИСТЕМНІ ПРЕДМЕТИ (Їх не можна змінити, вони завжди додаються в початок)
+const SYSTEM_BOOSTERS = {
     micro: [
-        { id: "m1", name: "+1 бал", desc: "По будь-якій темі", price: 200 },
-        { id: "m2", name: "+1 бал до самостійної", desc: "По будь-якій темі", price: 300 },
-        { id: "m3", name: "Щит від Помилки", desc: "1 помилка не зараховується", price: 300 }
+        { id: "sys_shield", name: "Щит від помилки", desc: "Дозволяє один раз помилитися", price: 150, icon: "🛡️", isSystem: true }
     ],
     medium: [
-        { id: "md1", name: "Звільнення від ДЗ", desc: "Одне домашнє завдання", price: 1000 },
-        { id: "md2", name: "+1 бал до контрольної", desc: "По темі пройденого замку", price: 1500 },
-        { id: "md3", name: "+10 балів", desc: "По будь-якій темі", price: 3500 }
+        { id: "sys_time", name: "Додатковий час", desc: "Додає +30 секунд на рівень", price: 300, icon: "⏳", isSystem: true }
     ],
     large: [
-        { id: "l1", name: "10 балів до тематичної", desc: "По будь-якій темі", price: 8000 },
-        { id: "l2", name: "+1 бал до семестрової", desc: "Бонус в кінці семестру", price: 10000 },
-        { id: "l3", name: "+1 бал до річної", desc: "Легендарна нагорода", price: 15000 }
+        { id: "sys_radar", name: "Радар (підказка)", desc: "Показує правильну відповідь", price: 600, icon: "📡", isSystem: true }
     ]
 };
 
-// 👇 1. Отримати товари (Пріоритет: Вчитель -> Глобальна БД -> Запасний варіант)
+// 2. ЗАПАСНІ ДАНІ (Якщо в базі взагалі порожньо)
+const FALLBACK_ITEMS = {
+    micro: [
+        { id: "m1", name: "+1 бал", desc: "За активність на уроці", price: 200 },
+        { id: "m2", name: "Стикер", desc: "Колекційна нагорода", price: 100 }
+    ],
+    medium: [
+        { id: "md1", name: "Звільнення від ДЗ", desc: "На один раз", price: 1000 }
+    ],
+    large: [
+        { id: "l1", name: "Амулет 'Автомат'", desc: "Звільнення від тематичної", price: 10000 }
+    ]
+};
+
+// 3. ГОЛОВНА ФУНКЦІЯ ОТРИМАННЯ ТОВАРІВ
 export async function getShopItems(teacherUid) {
-    // ЕТАП 1: Перевіряємо, чи є персональні налаштування у вчителя
-    if (teacherUid) {
-        try {
-            const userRef = doc(db, "users", teacherUid);
-            const userSnap = await getDoc(userRef);
+    let baseItems = { micro: [], medium: [], large: [] };
 
-            if (userSnap.exists()) {
-                const data = userSnap.data();
-                if (data.treasuryConfig) {
-                    return data.treasuryConfig;
-                }
-            }
-        } catch (error) {
-            console.error("Помилка при завантаженні профілю вчителя:", error);
-        }
-    }
-
-    // ЕТАП 2: Якщо у вчителя пусто, беремо ГЛОБАЛЬНУ конфігурацію
     try {
-        // Звертаємось до колекції "глобальна_конфігурація", документ "магазин"
-        const globalRef = doc(db, "global_config", "shop");
-        const globalSnap = await getDoc(globalRef);
+        let dataFound = null;
 
-        if (globalSnap.exists()) {
-            const data = globalSnap.data();
-            
-            // Перевірка: чи правильні назви полів у базі?
-            if (data.micro || data.medium || data.large) {
-                return data;
-            } else {
-                console.warn("⚠️ У базі знайдено документ, але поля названі неправильно (має бути micro, medium, large).");
+        // Пріоритет 1: Конфігурація конкретного вчителя
+        if (teacherUid) {
+            const userSnap = await getDoc(doc(db, "users", teacherUid));
+            if (userSnap.exists() && userSnap.data().treasuryConfig) {
+                dataFound = userSnap.data().treasuryConfig;
             }
-        } else {
-             console.log("⚠️ Документ 'глобальна_конфігурація/магазин' не знайдено.");
         }
-    } catch (error) {
-        console.error("Помилка при завантаженні глобальної конфігурації:", error);
+        
+        // Пріоритет 2: Глобальна конфігурація
+        if (!dataFound) {
+            const globalSnap = await getDoc(doc(db, "global_config", "shop"));
+            if (globalSnap.exists()) {
+                dataFound = globalSnap.data();
+            }
+        }
+
+        baseItems = dataFound || FALLBACK_ITEMS;
+
+    } catch (e) {
+        console.error("Shop Load Error:", e);
+        baseItems = FALLBACK_ITEMS;
     }
 
-    // ЕТАП 3: Якщо все пропало — беремо запасні дані з коду
-    return FALLBACK_ITEMS;
+    // --- МАГІЯ ВИПРАВЛЕННЯ ТУТ ---
+    
+    // Функція-помічник для розумного злиття категорій
+    const mergeCategory = (systemArray, teacherArray) => {
+        const safeTeacherArray = teacherArray || [];
+        
+        // 1. Беремо системні предмети, але якщо вони є в базі вчителя — оновлюємо їх ціну/опис
+        const mergedSystems = systemArray.map(sysItem => {
+            const teacherVersion = safeTeacherArray.find(t => t.id === sysItem.id);
+            if (teacherVersion) {
+                return { ...sysItem, ...teacherVersion }; // Дані вчителя перекривають системні
+            }
+            return sysItem;
+        });
+
+        // 2. Додаємо всі інші предмети вчителя, які НЕ є системними
+        const teacherOnlyItems = safeTeacherArray.filter(t => 
+            !systemArray.some(s => s.id === t.id)
+        );
+
+        return [...mergedSystems, ...teacherOnlyItems];
+    };
+
+    return {
+        micro: mergeCategory(SYSTEM_BOOSTERS.micro, baseItems.micro),
+        medium: mergeCategory(SYSTEM_BOOSTERS.medium, baseItems.medium),
+        large: mergeCategory(SYSTEM_BOOSTERS.large, baseItems.large)
+    };
 }
 
-// 👇 2. Зберегти налаштування магазину (Тільки для вчителя)
+// 4. ЗБЕРЕЖЕННЯ (Тільки для вчителя)
 export async function saveShopItems(teacherUid, newItems) {
     if (!teacherUid) return;
-
     try {
         const teacherRef = doc(db, "users", teacherUid);
-        await updateDoc(teacherRef, {
-            treasuryConfig: newItems
-        });
-        console.log("✅ Скарбницю оновлено для вчителя:", teacherUid);
+        await updateDoc(teacherRef, { treasuryConfig: newItems });
         return true;
     } catch (error) {
-        console.error("Помилка збереження:", error);
-        alert("Не вдалося зберегти зміни.");
+        console.error("Save Error:", error);
         return false;
     }
 }
 
-// 👇 3. Допоміжна функція пошуку
+// 5. ПОШУК ПРЕДМЕТА ЗА ID
 export function findItemInList(shopData, itemId) {
     if (!shopData) return null;
     const all = [...(shopData.micro || []), ...(shopData.medium || []), ...(shopData.large || [])];
