@@ -43,7 +43,7 @@ export async function getShopItems(teacherUid) {
             }
         }
         
-        // Пріоритет 2: Глобальна конфігурація з БД
+        // Пріоритет 2: Глобальна конфігурація
         if (!dataFound) {
             const globalSnap = await getDoc(doc(db, "global_config", "shop"));
             if (globalSnap.exists()) {
@@ -51,7 +51,6 @@ export async function getShopItems(teacherUid) {
             }
         }
 
-        // Пріоритет 3: Якщо нічого не знайшли — беремо запасні дані
         baseItems = dataFound || FALLBACK_ITEMS;
 
     } catch (e) {
@@ -59,12 +58,33 @@ export async function getShopItems(teacherUid) {
         baseItems = FALLBACK_ITEMS;
     }
 
-    // МАГІЯ: Повертаємо об'єднаний список (Системні + ті, що в базі)
-    // .filter(i => !i.isSystem) потрібен, щоб випадково не продублювати системні предмети, якщо вони збережені в БД
+    // --- МАГІЯ ВИПРАВЛЕННЯ ТУТ ---
+    
+    // Функція-помічник для розумного злиття категорій
+    const mergeCategory = (systemArray, teacherArray) => {
+        const safeTeacherArray = teacherArray || [];
+        
+        // 1. Беремо системні предмети, але якщо вони є в базі вчителя — оновлюємо їх ціну/опис
+        const mergedSystems = systemArray.map(sysItem => {
+            const teacherVersion = safeTeacherArray.find(t => t.id === sysItem.id);
+            if (teacherVersion) {
+                return { ...sysItem, ...teacherVersion }; // Дані вчителя перекривають системні
+            }
+            return sysItem;
+        });
+
+        // 2. Додаємо всі інші предмети вчителя, які НЕ є системними
+        const teacherOnlyItems = safeTeacherArray.filter(t => 
+            !systemArray.some(s => s.id === t.id)
+        );
+
+        return [...mergedSystems, ...teacherOnlyItems];
+    };
+
     return {
-        micro: [...SYSTEM_BOOSTERS.micro, ...(baseItems.micro || []).filter(i => i.id !== "sys_shield")],
-        medium: [...SYSTEM_BOOSTERS.medium, ...(baseItems.medium || []).filter(i => i.id !== "sys_time")],
-        large: [...SYSTEM_BOOSTERS.large, ...(baseItems.large || []).filter(i => i.id !== "sys_radar")]
+        micro: mergeCategory(SYSTEM_BOOSTERS.micro, baseItems.micro),
+        medium: mergeCategory(SYSTEM_BOOSTERS.medium, baseItems.medium),
+        large: mergeCategory(SYSTEM_BOOSTERS.large, baseItems.large)
     };
 }
 

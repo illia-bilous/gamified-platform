@@ -136,9 +136,7 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
                 finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
             }
             
-            let baseTime = foundTask.timeLimit ? parseInt(foundTask.timeLimit) : 120;
-            // Якщо активовано бустер часу, додаємо 30 секунд (наприклад)
-            finalConfig.time = finalConfig.hasExtraTime ? baseTime + 30 : baseTime;
+            finalConfig.time = foundTask.timeLimit ? parseInt(foundTask.timeLimit) : 120;
             
             if (foundTask.reward !== undefined) finalConfig.reward = parseInt(foundTask.reward);
         }

@@ -24,6 +24,7 @@ let diaryUnsubscribe = null;
 let goldTrackerUnsubscribe = null;
 let cachedShopItems = null;
 let isProcessingReward = false; 
+let shopUnsubscribe = null;
 
 const DEFAULT_AVATAR = 'assets/img/base.png';
 const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
@@ -329,17 +330,51 @@ export async function initStudentPanel() {
     if (!user) return;
     
     startLiveGoldTracker(user.uid);
-    try { cachedShopItems = await getShopItems(user.teacherUid); } catch (e) { }
     
+    if (shopUnsubscribe) shopUnsubscribe();
+    
+    const teacherRef = doc(db, "users", user.teacherUid);
+    shopUnsubscribe = onSnapshot(teacherRef, (docSnap) => {
+        if (docSnap.exists()) {
+            const teacherData = docSnap.data();
+            // Беремо дані з бази. Якщо treasuryConfig порожній — використовуємо FALLBACK_ITEMS
+            const baseItems = teacherData.treasuryConfig || FALLBACK_ITEMS;
+
+            // Функція-помічник, щоб правильно дістати системний предмет з бази або дати дефолт
+            const getSystemItem = (id, defaultData, category) => {
+                const fromDb = (baseItems[category] || []).find(i => i.id === id);
+                return fromDb ? fromDb : defaultData;
+            };
+
+            // ФормуємоcachedShopItems ПРАВИЛЬНО
+            cachedShopItems = {
+                micro: [
+                    getSystemItem("sys_shield", { id: "sys_shield", name: "Щит від помилки", desc: "Дозволяє один раз помилитися", price: 150, icon: "🛡️", isSystem: true }, "micro"),
+                    ...(baseItems.micro || []).filter(i => i.id !== "sys_shield")
+                ],
+                medium: [
+                    getSystemItem("sys_time", { id: "sys_time", name: "Додатковий час", desc: "Додає +60 секунд на рівень", price: 300, icon: "⏳", isSystem: true }, "medium"),
+                    ...(baseItems.medium || []).filter(i => i.id !== "sys_time")
+                ],
+                large: [
+                    getSystemItem("sys_radar", { id: "sys_radar", name: "Радар (підказка)", desc: "Показує правильну відповідь", price: 600, icon: "📡", isSystem: true }, "large"),
+                    ...(baseItems.large || []).filter(i => i.id !== "sys_radar")
+                ]
+            };
+
+            console.log("✨ Магазин оновлено динамічно:", cachedShopItems);
+            
+            renderShopSection("rewards-micro-list", cachedShopItems.micro);
+            renderShopSection("rewards-medium-list", cachedShopItems.medium);
+            renderShopSection("rewards-large-list", cachedShopItems.large);
+            
+            renderInventory(user);
+        }
+    });
+
     updateHomeDisplay(user);
     renderLeaderboard(user);
     setupAvatarSystem(user);
-    
-    if (cachedShopItems) {
-        renderShopSection("rewards-micro-list", cachedShopItems.micro);
-        renderShopSection("rewards-medium-list", cachedShopItems.medium);
-        renderShopSection("rewards-large-list", cachedShopItems.large);
-    }
     setupUnityUI();
 }
 
@@ -406,21 +441,51 @@ function openAvatarModal() {
     };
 }
 
+// 1. Допоміжна функція для іконок (додай на початку або перед renderShopSection)
+function getBoosterIcon(name) {
+    const n = name.toLowerCase();
+    if (n.includes("щит")) return "🛡️";
+    if (n.includes("час")) return "⏳";
+    if (n.includes("радар") || n.includes("підказка")) return "📡";
+    return "📜"; // іконка для звичайних нагород
+}
+
+// 2. Оновлена функція рендеру секцій магазину
 function renderShopSection(containerId, items) {
     const container = document.getElementById(containerId);
     if (!container || !items) return;
     container.innerHTML = "";
+
     items.forEach(item => {
+        // Визначаємо, чи це системний бустер (по ID)
+        const isBooster = item.id && String(item.id).startsWith('sys_');
+        const icon = getBoosterIcon(item.name);
+
         const div = document.createElement("div");
-        div.className = "shop-item";
+        // Додаємо клас для стилізації, якщо це бустер
+        div.className = `shop-item ${isBooster ? 'booster-item-card' : ''}`;
+        
+        // Додаємо інлайнові стилі для виділення бустерів (якщо немає CSS)
+        if (isBooster) {
+            div.style.cssText = "background: linear-gradient(145deg, #16212e, #1a1a1a); border: 1px solid #3498db; border-radius: 10px; padding: 15px; margin-bottom: 10px; position: relative; overflow: hidden;";
+        } else {
+            div.style.cssText = "background: #252525; border: 1px solid #333; border-radius: 10px; padding: 15px; margin-bottom: 10px;";
+        }
+
         div.innerHTML = `
-            <div class="shop-item-row">
-                <div class="item-name">${item.name}</div>
-                <div class="item-price">${item.price} 💰</div>
+            ${isBooster ? `<div style="position:absolute; top:0; right:0; background:#3498db; color:white; font-size:0.6em; padding:2px 8px; border-bottom-left-radius:8px; font-weight:bold;">БУСТЕР</div>` : ''}
+            <div class="shop-item-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div class="item-name" style="font-weight: bold; color: ${isBooster ? '#3498db' : 'white'}; font-size: 1.1em;">
+                    ${icon} ${item.name}
+                </div>
+                <div class="item-price" style="color: #f1c40f; font-weight: bold; font-size: 1.1em;">${item.price} 💰</div>
             </div>
-            <div class="item-desc">${item.desc}</div>
-            <button class="btn-buy" data-id="${item.id}">Купити</button>
+            <div class="item-desc" style="color: #aaa; font-size: 0.85em; margin-bottom: 12px; min-height: 2.5em;">${item.desc || ''}</div>
+            <button class="btn-buy" data-id="${item.id}" style="width: 100%; padding: 10px; border: none; border-radius: 6px; background: #2ecc71; color: white; font-weight: bold; cursor: pointer; transition: 0.2s;">
+                КУПИТИ
+            </button>
         `;
+
         div.querySelector(".btn-buy").onclick = () => buyItem(item);
         container.appendChild(div);
     });
@@ -430,13 +495,20 @@ async function buyItem(visualItem) {
     let u = getCurrentUser();
     if (!u) return;
 
-    const realItem = findItemInList(cachedShopItems, visualItem.id);
-    if (!realItem) return;
+    // ШУКАЄМО ЦІНУ: спочатку в кеші магазину від вчителя
+    let realItem = null;
+    if (cachedShopItems) {
+        // Шукаємо у всіх трьох категоріях
+        const allItems = [...(cachedShopItems.micro || []), ...(cachedShopItems.medium || []), ...(cachedShopItems.large || [])];
+        realItem = allItems.find(i => i.id === visualItem.id);
+    }
+
+    // Якщо вчитель не налаштував ціну, беремо ту, що прийшла візуально (дефолтну)
+    if (!realItem) realItem = visualItem; 
 
     if (u.profile.gold >= realItem.price) {
         if (!confirm(`Купити "${realItem.name}" за ${realItem.price} золота?`)) return;
 
-        // 1. Оновлюємо локальні дані
         u.profile.gold -= realItem.price;
         if (!u.profile.inventory) u.profile.inventory = [];
         
@@ -446,13 +518,9 @@ async function buyItem(visualItem) {
             date: new Date().toISOString() 
         });
 
-        // 2. Зберігаємо в Firebase через нову функцію
         await saveUserData(u);
-
-        // 3. Оновлюємо інтерфейс
-        localStorage.setItem("currentUser", JSON.stringify(u)); // оновлюємо кеш
+        localStorage.setItem("currentUser", JSON.stringify(u));
         updateHomeDisplay(u);
-        
         alert(`Придбано: ${realItem.name}!`);
     } else {
         alert("Недостатньо золота!");
@@ -462,37 +530,84 @@ async function buyItem(visualItem) {
 function renderInventory(currentUser) {
     const listEl = document.getElementById("student-inventory-list");
     if (!listEl) return;
+
     const userInv = currentUser.profile.inventory || [];
+    
+    // Якщо порожньо - виводимо повідомлення на всю ширину
     if (userInv.length === 0) {
-        listEl.innerHTML = '<li class="empty-msg" style="width:100%; text-align:center;">Поки що пусто...</li>';
+        listEl.innerHTML = '<div style="width:100%; text-align:center; padding:40px; color:#666; font-style:italic;">Ваш інвентар порожній. Купіть щось у магазині!</div>';
         listEl.style.display = "block";
         return;
     }
-    listEl.className = "treasury-grid";
-    listEl.style.display = "flex";
-    listEl.innerHTML = "";
+
+    // Підготовка даних магазину
     const shopDB = cachedShopItems || { micro: [], medium: [], large: [] };
-    const createColumn = (title, dbItems) => {
+
+    // Допоміжна функція для отримання іконки
+    const getItemIcon = (item) => {
+        if (item.icon) return item.icon;
+        const name = item.name.toLowerCase();
+        if (name.includes("щит")) return "🛡️";
+        if (name.includes("час")) return "⏳";
+        if (name.includes("радар")) return "📡";
+        if (name.includes("бал")) return "🏆";
+        if (name.includes("дз")) return "📝";
+        return "🎁";
+    };
+
+    const createColumn = (title, dbItems, color) => {
         const safeItems = dbItems || [];
-        const itemsInCat = safeItems.filter(shopItem => userInv.some(uItem => uItem.name === shopItem.name));
-        let contentHtml = itemsInCat.length === 0 ? `<div class="inv-empty-category">Пусто...</div>` : "";
-        itemsInCat.forEach(shopItem => {
-            const count = userInv.filter(uItem => uItem.name === shopItem.name).length;
-            contentHtml += `
-                <div class="inventory-card-item">
-                    <div class="inv-name">${shopItem.name} <span class="item-count">x${count}</span></div>
-                    <div class="inv-desc">${shopItem.desc}</div>
-                </div>`;
-        });
+        
+        // Знаходимо, які предмети з цієї категорії магазину є в інвентарі
+        // Фільтруємо унікальні предмети, щоб не дублювати картки
+        const uniqueItemsInCat = safeItems.filter(shopItem => 
+            userInv.some(uItem => uItem.id === shopItem.id || uItem.name === shopItem.name)
+        );
+
+        let contentHtml = "";
+
+        if (uniqueItemsInCat.length === 0) {
+            contentHtml = `<div style="text-align:center; color:#555; font-size:0.85em; padding:20px; border: 1px dashed #333; border-radius:8px;">Порожньо</div>`;
+        } else {
+            uniqueItemsInCat.forEach(shopItem => {
+                // Рахуємо кількість (по ID або по імені для страховки)
+                const count = userInv.filter(uItem => uItem.id === shopItem.id || uItem.name === shopItem.name).length;
+                const icon = getItemIcon(shopItem);
+
+                contentHtml += `
+                    <div class="inventory-card-item" style="background: rgba(255,255,255,0.03); border-left: 3px solid ${color}; padding: 12px; margin-bottom: 10px; border-radius: 4px; position: relative;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                            <span style="font-size: 1.2em;">${icon}</span>
+                            <div style="flex-grow: 1;">
+                                <div style="font-weight: bold; color: #eee; font-size: 0.95em;">${shopItem.name}</div>
+                                <div style="font-size: 0.75em; color: #888; line-height: 1.2;">${shopItem.desc || ''}</div>
+                            </div>
+                            <div style="background: ${color}; color: white; min-width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8em; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+                                ${count}
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
         return `
-            <div class="reward-column">
-                <div class="section-sub-header">${title}</div>
+            <div class="reward-column" style="flex: 1; min-width: 280px; display: flex; flex-direction: column;">
+                <div style="color: ${color}; font-weight: bold; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid ${color}44; padding-bottom: 5px; display: flex; justify-content: space-between;">
+                    <span>${title}</span>
+                </div>
                 <div class="inventory-column-content">${contentHtml}</div>
             </div>`;
     };
-    listEl.innerHTML += createColumn("Мої Мікро-нагороди", shopDB.micro);
-    listEl.innerHTML += createColumn("Мої Середні нагороди", shopDB.medium);
-    listEl.innerHTML += createColumn("Мої Великі нагороди", shopDB.large);
+
+    // Очищуємо та налаштовуємо контейнер
+    listEl.innerHTML = "";
+    listEl.className = "treasury-grid"; // Використовуємо ваш оригінальний клас
+    listEl.style.cssText = "display: flex; gap: 25px; flex-wrap: wrap; justify-content: center; width: 100%; padding: 10px;";
+
+    // Рендеримо 3 колонки з різними кольорами
+    listEl.innerHTML += createColumn("Мікро-нагороди", shopDB.micro, "#2ecc71");
+    listEl.innerHTML += createColumn("Середні нагороди", shopDB.medium, "#3498db");
+    listEl.innerHTML += createColumn("Великі нагороди", shopDB.large, "#9b59b6");
 }
 
 function renderLeaderboard(currentUser) {

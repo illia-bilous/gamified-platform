@@ -655,16 +655,24 @@ async function renderTreasureEditor() {
     refreshEditor();
 }
 
+function getBoosterIcon(name) {
+    const n = name.toLowerCase();
+    if (n.includes("щит")) return "🛡️";
+    if (n.includes("час")) return "⏳";
+    if (n.includes("радар") || n.includes("підказка")) return "📡";
+    return "⚡"; // Дефолтна іконка для інших системних штук
+}
+
 function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave, color, onRefresh) {
     const col = document.createElement("div");
-    col.style.cssText = "flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid " + color;
+    col.style.cssText = `flex: 1; min-width: 320px; background: #1a1a1a; padding: 20px; border-radius: 12px; border-top: 5px solid ${color}; display: flex; flex-direction: column; gap: 15px;`;
     
     if (!fullShopData[categoryKey]) fullShopData[categoryKey] = [];
     const list = fullShopData[categoryKey];
 
     col.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
-            <h3 style="color: ${color}; margin:0;">${title}</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 5px;">
+            <h3 style="color: ${color}; margin:0; text-transform: uppercase; font-size: 1.1em;">${title}</h3>
             <span style="font-size: 0.8em; color: #777;">${list.length}/10</span>
         </div>
     `;
@@ -673,100 +681,118 @@ function renderEditableCategory(parent, title, categoryKey, fullShopData, onSave
     col.appendChild(cardsContainer);
 
     list.forEach((item, index) => {
+        // Визначаємо, чи це системний бустер
+        const isBooster = (item.id && String(item.id).startsWith('sys_')) || item.isSystem;
+        const boosterIcon = isBooster ? getBoosterIcon(item.name) : "";
+
         const card = document.createElement("div");
-        card.style.cssText = "background: #252525; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; position: relative;";
-        
-        card.innerHTML = `
-            <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.75em; color: #777;">Назва:</label>
-                <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 6px; background: #111; color: white; border: 1px solid #444; border-radius: 4px;">
-            </div>
-            
-            <div style="margin-bottom: 10px;">
-                <label style="font-size: 0.75em; color: #777;">Опис:</label>
-                <input type="text" class="inp-desc" value="${item.desc}" style="width: 100%; padding: 6px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px;">
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 10px;">
-                <div style="flex-grow: 1;">
-                    <label style="font-size: 0.75em; color: #f1c40f;">Ціна:</label>
-                    <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
-                </div>
-                
-                <button class="btn-save" style="padding: 6px 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">💾</button>
-                
-                <button class="btn-delete" style="padding: 6px 12px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">🗑️</button>
-            </div>
-            <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+        card.style.cssText = `
+            background: ${isBooster ? '#172e16' : '#252525'}; 
+            padding: 15px; 
+            margin-bottom: 15px; 
+            border-radius: 8px; 
+            border: 1px solid ${isBooster ? '#5bdb34' : '#333'}; 
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         `;
+        
+        // Внутрішня розмітка залежить від типу (бустер чи нагорода)
+        if (isBooster) {
+            // КОНТЕНТ ДЛЯ БУСТЕРА (Тільки ціна + замок)
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span style="font-weight: bold; color: #18e0e7; font-size: 0.95em;">${boosterIcon} ${item.name}</span>
+                    <span title="Системний предмет (не можна видалити або перейменувати)" style="cursor: help; opacity: 0.6;">🔒</span>
+                </div>
+                <p style="font-size: 0.8em; color: #aaa; margin: 0 0 10px 0;">${item.desc || 'Системний підсилювач'}</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="flex-grow: 1;">
+                        <label style="font-size: 0.7em; color: #f1c40f; display: block; margin-bottom: 2px;">Вартість:</label>
+                        <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 6px; background: #0d151f; color: #f1c40f; border: 1px solid #3498db; border-radius: 4px; font-weight: bold;">
+                    </div>
+                    <button class="btn-save" style="align-self: flex-end; padding: 7px 12px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">💾</button>
+                </div>
+                <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+            `;
+        } else {
+            // КОНТЕНТ ДЛЯ ЗВИЧАЙНОЇ НАГОРОДИ (Повне редагування)
+            card.innerHTML = `
+                <div style="margin-bottom: 8px;">
+                    <label style="font-size: 0.7em; color: #777;">Назва:</label>
+                    <input type="text" class="inp-name" value="${item.name}" style="width: 100%; padding: 5px; background: #111; color: white; border: 1px solid #444; border-radius: 4px; font-size: 0.9em;">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label style="font-size: 0.7em; color: #777;">Опис:</label>
+                    <input type="text" class="inp-desc" value="${item.desc || ''}" style="width: 100%; padding: 5px; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 8px;">
+                    <div style="flex-grow: 1;">
+                        <label style="font-size: 0.7em; color: #f1c40f;">Ціна:</label>
+                        <input type="number" class="inp-price" value="${item.price}" style="width: 100%; padding: 5px; background: #111; color: #f1c40f; border: 1px solid #444; border-radius: 4px; font-weight: bold;">
+                    </div>
+                    <button class="btn-save" style="padding: 6px 10px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer;">💾</button>
+                    <button class="btn-delete" style="padding: 6px 10px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+                </div>
+                <div class="feedback-msg" style="text-align: center; font-size: 0.7em; height: 1em; margin-top: 5px;"></div>
+            `;
+        }
 
-        card.querySelector(".btn-delete").onclick = async () => {
-            if (confirm(`Видалити "${item.name}"?`)) {
-                list.splice(index, 1); 
-                await onSave(fullShopData); 
-                onRefresh(); 
-            }
-        };
-
+        // Логіка кнопок (однакова для обох типів, але з перевіркою полів)
         const btnSave = card.querySelector(".btn-save");
         btnSave.onclick = async () => {
-            const newName = card.querySelector(".inp-name").value;
-            const newDesc = card.querySelector(".inp-desc").value;
-            const newPrice = parseInt(card.querySelector(".inp-price").value);
             const msg = card.querySelector(".feedback-msg");
+            const newPrice = parseInt(card.querySelector(".inp-price").value);
+            
+            if (isNaN(newPrice)) return alert("Вкажіть коректну ціну!");
 
-            if (!newName || isNaN(newPrice)) return alert("Заповніть назву та ціну!");
+            let updateData = { ...item, price: newPrice };
+
+            // Якщо це не бустер, оновлюємо ще й текст
+            if (!isBooster) {
+                const newName = card.querySelector(".inp-name").value;
+                const newDesc = card.querySelector(".inp-desc").value;
+                if (!newName) return alert("Назва не може бути порожньою!");
+                updateData.name = newName;
+                updateData.desc = newDesc;
+            }
 
             btnSave.textContent = "⏳";
-            
-            list[index] = { ...item, name: newName, desc: newDesc, price: newPrice };
+            list[index] = updateData;
             
             await onSave(fullShopData);
             
             btnSave.textContent = "💾";
-            msg.textContent = "Збережено!";
+            msg.textContent = "Збережено успішно!";
             msg.style.color = "#2ecc71";
             setTimeout(() => msg.textContent = "", 2000);
         };
 
+        if (!isBooster) {
+            card.querySelector(".btn-delete").onclick = async () => {
+                if (confirm(`Видалити "${item.name}"?`)) {
+                    list.splice(index, 1);
+                    await onSave(fullShopData);
+                    onRefresh();
+                }
+            };
+        }
+
         cardsContainer.appendChild(card);
     });
 
-    // 2. КНОПКА "ДОДАТИ НОВИЙ"
+    // Кнопка додавання
     if (list.length < 10) {
         const addBtn = document.createElement("button");
         addBtn.innerText = "➕ Додати нагороду";
-        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s;`;
-        
-        addBtn.onmouseover = () => addBtn.style.background = "rgba(255,255,255,0.05)";
-        addBtn.onmouseout = () => addBtn.style.background = "transparent";
-        
+        addBtn.style.cssText = `width: 100%; padding: 12px; background: transparent; border: 2px dashed ${color}; color: ${color}; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px;`;
         addBtn.onclick = async () => {
-            // Створюємо новий шаблон товару
-            // Генеруємо унікальний ID, використовуючи час + випадкове число
             const newId = categoryKey + "_" + Date.now(); 
-            
-            const newItem = {
-                id: newId,
-                name: "Нова нагорода",
-                desc: "Опис нагороди",
-                price: 100
-            };
-
-            list.push(newItem); // Додаємо в кінець масиву
-            
+            list.push({ id: newId, name: "Нова нагорода", desc: "", price: 100 });
             addBtn.innerText = "⏳ Додавання...";
-            await onSave(fullShopData); // Зберігаємо
-            onRefresh(); // Перемальовуємо, щоб з'явилась нова картка
+            await onSave(fullShopData);
+            onRefresh();
         };
-
         col.appendChild(addBtn);
-    } else {
-        // Якщо ліміт досягнуто
-        const limitMsg = document.createElement("div");
-        limitMsg.innerText = "Максимум 10 нагород досягнуто";
-        limitMsg.style.cssText = "text-align: center; color: #555; font-size: 0.9em; padding: 10px; border: 1px dashed #444; border-radius: 8px;";
-        col.appendChild(limitMsg);
     }
 
     parent.appendChild(col);
