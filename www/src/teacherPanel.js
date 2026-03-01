@@ -444,6 +444,7 @@ async function renderLevelEditor() {
                     <option value="1">Рівень 1 (Легкий)</option>
                     <option value="2">Рівень 2 (Середній)</option>
                     <option value="3">Рівень 3 (Складний)</option>
+                    <option value="4">Рівень 4 (Епічний)</option>
                 </select>
                 <button id="btn-load-level" class="btn" style="width: auto; padding: 10px 20px; background: #3498db; margin:0;">Завантажити</button>
             </div>
@@ -550,64 +551,73 @@ function setupLevelEditorLogic() {
     };
 
     // ==========================================
-    // 💾 ЗБЕРЕЖЕННЯ (SAVE)
-    // ==========================================
-    btnSave.onclick = async () => {
-        const topic = document.getElementById("editor-topic").value;
-        const levelNum = parseInt(document.getElementById("editor-level").value); // Наприклад, 1, 2 або 3
-        
-        // Збираємо неправильні відповіді, фільтруємо пусті
-        const wrongs = Array.from(wInputs).map(i => i.value.trim()).filter(v => v !== "");
-
-        if(!qInput.value || !cInput.value) return alert("Заповніть питання та відповідь!");
-
-        statusText.textContent = "⏳ Збереження...";
-
-        try {
-            const docRef = doc(db, "teacher_configs", user.uid);
-            const docSnap = await getDoc(docRef);
-            
-            // Отримуємо поточні дані або створюємо пустий об'єкт
-            let currentData = docSnap.exists() ? docSnap.data() : {};
-            
-            // Переконуємось, що структура теми існує
-            if (!currentData[topic]) currentData[topic] = {};
-            
-            // Переконуємось, що масив doors існує
-            if (!Array.isArray(currentData[topic].doors)) currentData[topic].doors = [];
-            
-            let doors = currentData[topic].doors;
-
-            // Формуємо об'єкт рівня
-            const doorData = {
-                id: levelNum,
-                question: qInput.value.trim(),
-                answer: cInput.value.trim(),
-                wrongAnswers: wrongs,
-                reward: parseInt(goldInput.value) || 50,
-                timeLimit: parseInt(timeInput.value) || 120
-            };
-
-            // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ:
-            // Записуємо строго у відповідний індекс (рівень 1 -> індекс 0)
-            // Це гарантує, що Unity знайде правильний рівень, навіть якщо ми зберегли їх не по порядку.
-            const index = levelNum - 1;
-            
-            doors[index] = doorData;
-
-            // Зберігаємо (merge: true не видалить інші теми цього вчителя)
-            await setDoc(docRef, { 
-                [topic]: { doors: doors } 
-            }, { merge: true });
-
-            console.log(`✅ Saved Level ${levelNum} at index ${index} for topic ${topic}`);
-            statusText.textContent = `✅ Збережено в тему "${topic}"!`;
+// 💾 ЗБЕРЕЖЕННЯ (ОНОВЛЕНА ВЕРСІЯ)
+// ==========================================
+btnSave.onclick = async () => {
+    const topic = document.getElementById("editor-topic").value;
+    const levelSelect = document.getElementById("editor-level");
+    const levelNum = parseInt(levelSelect.value); 
     
-        } catch (e) {
-            console.error("Помилка Firebase:", e);
-            statusText.textContent = "❌ Помилка збереження: " + e.message;
+    // Перевірка наявності елементів перед зчитуванням
+    if (!qInput || !cInput) {
+        console.error("Елементи вводу не знайдені!");
+        return;
+    }
+
+    // Збираємо неправильні відповіді, фільтруємо undefined та пусті рядки
+    const wrongs = Array.from(wInputs)
+        .map(i => i.value ? i.value.trim() : "")
+        .filter(v => v !== "");
+
+    if(!qInput.value.trim() || !cInput.value.trim()) {
+        return alert("⚠️ Заповніть питання та правильну відповідь!");
+    }
+
+    statusText.textContent = "⏳ Збереження...";
+
+    try {
+        const docRef = doc(db, "teacher_configs", user.uid);
+        const docSnap = await getDoc(docRef);
+        
+        let currentData = docSnap.exists() ? docSnap.data() : {};
+        
+        if (!currentData[topic]) currentData[topic] = {};
+        if (!Array.isArray(currentData[topic].doors)) currentData[topic].doors = [];
+        
+        let doors = [...currentData[topic].doors]; // Копіюємо масив
+
+        // ФОРМУЄМО ОБ'ЄКТ (БЕЗ undefined)
+        const doorData = {
+            id: Number(levelNum) || 1,
+            question: String(qInput.value).trim() || "",
+            answer: String(cInput.value).trim() || "",
+            wrongAnswers: wrongs, 
+            reward: parseInt(goldInput.value) || 50,
+            timeLimit: parseInt(timeInput.value) || 120
+        };
+
+        // Записуємо у відповідний індекс (Рівень 1 -> index 0)
+        const index = levelNum - 1;
+        doors[index] = doorData;
+
+        // Очищаємо масив від можливих порожніх елементів (якщо пропустили рівні)
+        for(let i=0; i < doors.length; i++) {
+            if(!doors[i]) doors[i] = { id: i+1, question: "Порожньо", answer: "-", wrongAnswers: [] };
         }
-    };
+
+        await setDoc(docRef, { 
+            [topic]: { doors: doors } 
+        }, { merge: true });
+
+        statusText.textContent = `✅ Збережено рівень ${levelNum}!`;
+        console.log("Успішне збереження:", doorData);
+
+    } catch (e) {
+        console.error("Помилка Firebase:", e);
+        statusText.textContent = "❌ Помилка: " + e.message;
+        alert("Помилка при збереженні. Перевірте консоль.");
+    }
+};
 }
 
 // ==========================================

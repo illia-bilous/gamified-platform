@@ -2,7 +2,7 @@ import { db } from "./firebase.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // 1. СИСТЕМНІ ПРЕДМЕТИ (Їх не можна змінити, вони завжди додаються в початок)
-const SYSTEM_BOOSTERS = {
+export const SYSTEM_BOOSTERS = {
     micro: [
         { id: "sys_shield", name: "Щит від помилки", desc: "Дозволяє один раз помилитися", price: 150, icon: "🛡️", isSystem: true }
     ],
@@ -15,7 +15,7 @@ const SYSTEM_BOOSTERS = {
 };
 
 // 2. ЗАПАСНІ ДАНІ (Якщо в базі взагалі порожньо)
-const FALLBACK_ITEMS = {
+export const FALLBACK_ITEMS = {
     micro: [
         { id: "m1", name: "+1 бал", desc: "За активність на уроці", price: 200 },
         { id: "m2", name: "Стикер", desc: "Колекційна нагорода", price: 100 }

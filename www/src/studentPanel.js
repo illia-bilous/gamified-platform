@@ -1,5 +1,5 @@
 import { getCurrentUser } from "./auth.js";
-import { getShopItems, findItemInList } from "./shopData.js";
+import { getShopItems, findItemInList, FALLBACK_ITEMS } from "./shopData.js";
 import { db } from "./firebase.js"; 
 import { sendConfigToUnity } from "./gameBridge.js"; 
 
@@ -9,6 +9,7 @@ import {
     where,  
     setDoc, 
     doc, 
+    getDoc,
     updateDoc, 
     onSnapshot, 
     addDoc, 
@@ -330,46 +331,59 @@ export async function initStudentPanel() {
     if (!user) return;
     
     startLiveGoldTracker(user.uid);
-    
     if (shopUnsubscribe) shopUnsubscribe();
     
     const teacherRef = doc(db, "users", user.teacherUid);
-    shopUnsubscribe = onSnapshot(teacherRef, (docSnap) => {
+    const globalShopRef = doc(db, "global_config", "shop");
+
+    // Підписуємось на зміни вчителя
+    shopUnsubscribe = onSnapshot(teacherRef, async (docSnap) => {
+        let finalItems = null;
+
         if (docSnap.exists()) {
             const teacherData = docSnap.data();
-            // Беремо дані з бази. Якщо treasuryConfig порожній — використовуємо FALLBACK_ITEMS
-            const baseItems = teacherData.treasuryConfig || FALLBACK_ITEMS;
-
-            // Функція-помічник, щоб правильно дістати системний предмет з бази або дати дефолт
-            const getSystemItem = (id, defaultData, category) => {
-                const fromDb = (baseItems[category] || []).find(i => i.id === id);
-                return fromDb ? fromDb : defaultData;
-            };
-
-            // ФормуємоcachedShopItems ПРАВИЛЬНО
-            cachedShopItems = {
-                micro: [
-                    getSystemItem("sys_shield", { id: "sys_shield", name: "Щит від помилки", desc: "Дозволяє один раз помилитися", price: 150, icon: "🛡️", isSystem: true }, "micro"),
-                    ...(baseItems.micro || []).filter(i => i.id !== "sys_shield")
-                ],
-                medium: [
-                    getSystemItem("sys_time", { id: "sys_time", name: "Додатковий час", desc: "Додає +60 секунд на рівень", price: 300, icon: "⏳", isSystem: true }, "medium"),
-                    ...(baseItems.medium || []).filter(i => i.id !== "sys_time")
-                ],
-                large: [
-                    getSystemItem("sys_radar", { id: "sys_radar", name: "Радар (підказка)", desc: "Показує правильну відповідь", price: 600, icon: "📡", isSystem: true }, "large"),
-                    ...(baseItems.large || []).filter(i => i.id !== "sys_radar")
-                ]
-            };
-
-            console.log("✨ Магазин оновлено динамічно:", cachedShopItems);
             
-            renderShopSection("rewards-micro-list", cachedShopItems.micro);
-            renderShopSection("rewards-medium-list", cachedShopItems.medium);
-            renderShopSection("rewards-large-list", cachedShopItems.large);
-            
-            renderInventory(user);
+            // 1. Перевірка: чи є у вчителя власний конфіг
+            if (teacherData.treasuryConfig && 
+                (teacherData.treasuryConfig.micro?.length > 0 || 
+                 teacherData.treasuryConfig.medium?.length > 0 || 
+                 teacherData.treasuryConfig.large?.length > 0)) {
+                
+                console.log("🏫 [Shop] Завантажено персональний конфіг вчителя");
+                finalItems = teacherData.treasuryConfig;
+            } else {
+                // 2. Якщо вчитель "порожній" — йдемо в Global Config
+                console.log("🌍 [Shop] Конфіг вчителя порожній. Запит до Global Shop...");
+                try {
+                    const globalSnap = await getDoc(globalShopRef);
+                    if (globalSnap.exists()) {
+                        finalItems = globalSnap.data();
+                        console.log("✅ [Shop] Global Shop завантажено успішно");
+                    } else {
+                        console.error("❌ [Shop] Global Shop документ не знайдено в БД!");
+                    }
+                } catch (err) {
+                    console.error("❌ [Shop] Помилка запиту до Global Shop:", err);
+                }
+            }
         }
+
+        // 3. Якщо нічого не знайшли в БД — беремо FALLBACK (аварійний випадок)
+        const base = finalItems || FALLBACK_ITEMS;
+        if (!finalItems) console.warn("⚠️ [Shop] Використовується локальний FALLBACK_ITEMS");
+
+        cachedShopItems = {
+            micro:  base.micro || [],
+            medium: base.medium || [],
+            large:  base.large || []
+        };
+
+        // Рендеримо результат
+        renderShopSection("rewards-micro-list", cachedShopItems.micro);
+        renderShopSection("rewards-medium-list", cachedShopItems.medium);
+        renderShopSection("rewards-large-list", cachedShopItems.large);
+        
+        renderInventory(user);
     });
 
     updateHomeDisplay(user);
@@ -377,7 +391,6 @@ export async function initStudentPanel() {
     setupAvatarSystem(user);
     setupUnityUI();
 }
-
 
 
 // ==========================================
