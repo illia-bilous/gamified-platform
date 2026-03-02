@@ -289,6 +289,11 @@ export function renderStudentDiary(currentUser) {
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
+    const classEl = document.getElementById("student-class-display");
+    if (classEl) {
+        // Використовуємо саме className, оскільки так воно названо в базі/auth.js
+        classEl.textContent = currentUser.className || "--"; 
+    }
     const goldEl = document.getElementById("student-gold-display");
     if (goldEl) goldEl.textContent = currentUser.profile.gold;
     
@@ -316,6 +321,7 @@ function startLiveGoldTracker(userId) {
             }
             let user = getCurrentUser();
             user.profile = data.profile;
+            user.className = data.className || "--";
             localStorage.setItem("currentUser", JSON.stringify(user));
             updateHomeDisplay(user);
             setupBoostersUI(user);
