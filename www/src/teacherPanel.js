@@ -46,19 +46,44 @@ export function initTeacherPanel() {
 // ==========================================
 // 📚 МОЇ КЛАСИ ТА ДЕШБОРД
 // ==========================================
-async function getUniqueClasses(teacherId) {
-    const q = query(collection(db, "users"), where("role", "==", "student"), where("teacherUid", "==", teacherId));
-    const usersSnapshot = await getDocs(q);
-    const classes = new Set(); 
-    let studentCount = 0;
-    usersSnapshot.forEach(doc => { 
-        const data = doc.data(); 
-        if (data.className) { 
-            classes.add(data.className); 
-            studentCount++; 
-        } 
+export async function getUniqueClasses(teacherUid) {
+    const currentUser = getCurrentUser();
+    const teacherCode = currentUser?.teacherCode;
+
+    const studentsRef = collection(db, "users");
+    // Беремо лише учнів
+    const q = query(studentsRef, where("role", "==", "student"));
+    const querySnapshot = await getDocs(q);
+
+    const classMap = {};
+    let totalStudents = 0;
+
+    querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        
+        // Перевірка: чи належить учень цьому вчителю (по UID або по тексту-коду)
+        const isMyStudent = (data.teacherUid === teacherUid) || 
+                          (data.teacherId === teacherUid) || 
+                          (data.teacherId === teacherCode);
+
+        if (isMyStudent) {
+            const className = data.className || "Без класу";
+            if (!classMap[className]) {
+                classMap[className] = 0;
+            }
+            classMap[className]++;
+            totalStudents++;
+        }
     });
-    return { classes: Array.from(classes), totalStudents: studentCount }; 
+
+    const classes = Object.keys(classMap)
+        .sort()
+        .map(name => ({
+            name: name,
+            count: classMap[name]
+        }));
+
+    return { classes, totalStudents };
 }
 
 export async function renderTeacherDashboard(containerId) {
@@ -66,46 +91,62 @@ export async function renderTeacherDashboard(containerId) {
     if (!container) return;
     const currentUser = getCurrentUser();
     if (!currentUser) return;
+    
     const myDisplayId = currentUser.teacherCode || currentUser.uid;
     const { classes, totalStudents } = await getUniqueClasses(currentUser.uid);
+    const totalClasses = classes.length;
 
-   container.innerHTML = `
-    <div class="page-header-container">
-        <h2 class="page-header-title">📚 Мої Класи</h2>
-        <div class="page-header-line"></div>
-        <p class="page-header-description">Керуйте своїми класами та переглядайте успішність учнів.</p>
-    </div>
+    const cardColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD', '#D4A5A5', '#9B59B6'];
 
-    <div style="text-align: center; margin-bottom: 40px;">
-        <div class="teacher-id-badge">
-            Ваш ID для учнів: <span>${myDisplayId}</span>
+    container.innerHTML = `
+        <div class="page-header-container">
+            <h2 class="page-header-title">📚 Мої Класи</h2>
+            <div class="page-header-line"></div>
+            <p class="page-header-description">Керуйте своїми класами та переглядайте успішність учнів.</p>
         </div>
-    </div>
 
-    <p style="text-align:center; color: #bdc3c7; font-size: 1.2em; margin-bottom: 30px;">
-        Всього учнів у вашій групі: <strong style="color: #fff;">${totalStudents}</strong>
-    </p>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <div class="teacher-id-badge">
+                Ваш ID для учнів: <span>${myDisplayId}</span>
+            </div>
+        </div>
 
-    <div id="class-cards" class="class-grid"></div>
-`;
+        <p style="text-align:center; color: #bdc3c7; font-size: 1.4em; margin-bottom: 30px; background: rgba(0,0,0,0.1); padding: 10px; border-radius: 10px;">
+            Всього класів: <strong style="color: #f1c40f;">${totalClasses}</strong> | 
+            Всього учнів: <strong style="color: #f1c40f;">${totalStudents}</strong>
+        </p>
 
-const grid = document.getElementById("class-cards");
-
-classes.forEach(className => {
-    const card = document.createElement("div");
-    card.className = "class-card"; 
-    
-    card.innerHTML = `
-        <h3>${className}</h3>
-        <p>Переглянути успішність →</p>
+        <div id="class-cards" class="class-grid-3x3"></div>
     `;
-    
-    card.addEventListener('click', () => { renderClassLeaderboard(className); });
-    grid.appendChild(card);
-});
-    if (classes.length === 0) grid.innerHTML = '<p style="text-align: center;">У вас ще немає зареєстрованих учнів.</p>';
-}
 
+    const grid = document.getElementById("class-cards");
+
+    classes.forEach((classObj, index) => {
+        const className = classObj.name;
+        const studentCount = classObj.count;
+
+        const card = document.createElement("div");
+        card.className = "class-card-colored"; 
+        
+        const color = cardColors[index % cardColors.length];
+        card.style.backgroundColor = color;
+        
+        card.innerHTML = `
+            <div class="card-content">
+                <h3>${className}</h3>
+                <div class="class-card-students">Учнів у класі: <strong>${studentCount}</strong></div>
+            </div>
+            <div class="card-footer">Переглянути успішність →</div>
+        `;
+        
+        card.onclick = () => renderClassLeaderboard(className);
+        grid.appendChild(card);
+    });
+
+    if (classes.length === 0) {
+        grid.innerHTML = '<p style="text-align: center; width: 100%; color: #aaa;">У вас ще немає зареєстрованих учнів.</p>';
+    }
+}
 // ==========================================
 // 🏆 АНАЛІТИКА ТА ЛІДЕРБОРД КЛАСУ
 // ==========================================
@@ -307,14 +348,17 @@ async function renderStudentProfile(student) {
         </div>
     `;
 
-    // --- ЛОГІКА КНОПОК ---
+    // ==========================================
+    // СЮДИ 👇 ВСТАВЛЯЄМО ОБРОБНИКИ ПОДІЙ
+    // ==========================================
 
+    // 1. Кнопка повернення
     document.getElementById("btn-back-to-list").onclick = () => {
         if (student.className) renderClassLeaderboard(student.className);
         else renderTeacherDashboard("teacher-content");
     };
 
-    // Оновлення золота
+    // 2. Оновлення золота
     document.getElementById("btn-save-gold").onclick = async () => {
         const input = document.getElementById("gold-input");
         const newVal = parseInt(input.value);
@@ -324,36 +368,46 @@ async function renderStudentProfile(student) {
             await updateDoc(doc(db, "users", student.uid), { "profile.gold": newVal });
             alert("✅ Баланс оновлено!");
             student.profile.gold = newVal;
-            renderStudentProfile(student);
+            renderStudentProfile(student); // Перемальовуємо, щоб побачити нове число
         } catch (e) { console.error(e); alert("❌ Помилка"); }
     };
 
-    // 🔥 КНОПКА СКИДАННЯ ВСІХ РІВНІВ
+    // 3. Скидання всіх рівнів
     document.getElementById("btn-reset-levels").onclick = async () => {
         await resetGameLevels(student.uid, student.name);
     };
 
-    // 🔄 КНОПКА СКИДАННЯ КОНКРЕТНОЇ ТЕМИ (НОВА)
+    // 4. Скидання конкретної теми
     document.getElementById("btn-reset-topic").onclick = async () => {
-        const topicSelect = document.getElementById("reset-topic-select");
-        const topicID = topicSelect.value;
-        const topicName = topicSelect.options[topicSelect.selectedIndex].text;
+    const topicSelect = document.getElementById("reset-topic-select");
+    const topicID = topicSelect.value; // Наприклад, "Fractions"
+    const topicName = topicSelect.options[topicSelect.selectedIndex].text;
 
-        const isConfirmed = confirm(`Скинути тему "${topicName}" для учня ${student.name}?\n\nВсі рівні цієї теми заблокуються.`);
-        if (!isConfirmed) return;
+    const isConfirmed = confirm(`Скинути тему "${topicName}" для учня ${student.name}?`);
+    if (!isConfirmed) return;
 
-        try {
-            await updateDoc(doc(db, "users", student.uid), { 
-                resetTopicCommand: topicID 
-            });
-            alert(`✅ Команда відправлена! Unity оновить дані при вході.`);
-        } catch (error) {
-            console.error(error);
-            alert("❌ Помилка: " + error.message);
-        }
-    };
+    try {
+    const userRef = doc(db, "users", student.uid);
+    const updatePath = `progress.${topicID}.maxAllowedLevel`;
+    
+    await updateDoc(userRef, { 
+        [updatePath]: 1,
+        [`progress.${topicID}.isBlocked`]: false 
+    });
 
-    // Видалення нагород
+    // 🔥 ВАЖЛИВО: Оновлюємо дані в об'єкті student, щоб інтерфейс і Unity бачили зміни
+    if (!student.progress) student.progress = {};
+    if (!student.progress[topicID]) student.progress[topicID] = {};
+    student.progress[topicID].maxAllowedLevel = 1;
+
+    alert(`✅ Тему ${topicName} скинуто до 1 рівня!`);
+    renderStudentProfile(student); // Перемальовуємо профіль
+} catch (error) { 
+    alert("❌ Помилка: " + error.message); 
+}
+};
+
+    // 5. Видалення нагород (списання)
     container.querySelectorAll('.btn-delete-reward').forEach(btn => {
         btn.onclick = async () => {
             const itemName = btn.dataset.name;
@@ -367,26 +421,59 @@ async function renderStudentProfile(student) {
             }
         };
     });
+    
+    // ==========================================
+    // КІНЕЦЬ ОБРОБНИКІВ 👆
+    // ==========================================
 }
 
 // ==========================================
-// 🎮 ФУНКЦІЯ СКИДАННЯ ВСІХ РІВНІВ
+// 🎮 ФУНКЦІЯ СКИДАННЯ ВСІХ РІВНІВ (ПОКРАЩЕНА)
 // ==========================================
 async function resetGameLevels(studentId, studentName) {
-    const isConfirmed = confirm(`Ви хочете закрити ВСІ рівні для учня ${studentName}?\n\nПрогрес всіх тем буде втрачено. Золото та інвентар залишаться.`);
-    
+    const isConfirmed = confirm(`Ви хочете закрити ВСІ рівні для учня ${studentName}?`);
     if (!isConfirmed) return;
 
     try {
         const userRef = doc(db, "users", studentId);
-        await updateDoc(userRef, { 
-            resetLevelProgress: true 
-        });
-        alert(`✅ Успішно! Рівні заблоковані.`);
+        
+        // Шляхи мають точно збігатися з тими, що використовує Unity
+        const resetData = {
+            "progress.Fractions.maxAllowedLevel": 1,
+            "progress.Powers.maxAllowedLevel": 1,
+            "progress.Quadratics.maxAllowedLevel": 1,
+            "progress.allTopicsBlocked": false
+        };
+
+        await updateDoc(userRef, resetData);
+
+        // 🔥 ОНОВЛЕННЯ ЛОКАЛЬНИХ ДАНИХ (щоб рендер спрацював)
+        const student = (await getDoc(userRef)).data(); // Отримуємо свіжі дані з бази
+        student.uid = studentId; 
+        
+        alert(`✅ Прогрес учня ${studentName} скинуто!`);
+        renderStudentProfile(student); // Перемальовуємо профіль з новими даними
     } catch (error) {
-        console.error("Level Reset Error:", error);
         alert("❌ Помилка: " + error.message);
     }
+}
+
+export async function updateStudentTopicLimit(studentId, topic, levelLimit, isBlocked = false) {
+    const studentRef = doc(db, "users", studentId);
+    try {
+        await updateDoc(studentRef, {
+            [`progress.${topic}.maxAllowedLevel`]: levelLimit,
+            [`progress.${topic}.isBlocked`]: isBlocked
+        });
+        console.log(`✅ Ліміт оновлено`);
+    } catch (e) { console.error("❌ Помилка:", e); }
+}
+
+export async function toggleAllGames(studentId, isBlocked) {
+    const studentRef = doc(db, "users", studentId);
+    await updateDoc(studentRef, {
+        "progress.allTopicsBlocked": isBlocked
+    });
 }
 
 // Функція для фізичного видалення предмету з бази даних

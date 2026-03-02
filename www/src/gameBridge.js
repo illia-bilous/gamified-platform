@@ -40,6 +40,27 @@ function getLevelFromTopicData(topicData, level) {
 export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) {
     console.log(`🚀 GameBridge: Старт... Topic="${topic}", Teacher="${teacherId}", Level=${level}`);
 
+    // --- НОВА ПЕРЕВІРКА ПРОГРЕСУ (ЗАХИСТ) ---
+    if (studentId) {
+        try {
+            const userRef = doc(db, "users", studentId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                // Отримуємо максимально дозволений рівень для цієї теми (дефолт 1)
+                const maxAllowed = userData.progress?.[topic]?.maxAllowedLevel || 1;
+                
+                if (level > maxAllowed) {
+                    console.error(`🚫 Спроба доступу до заблокованого рівня! Запитувано: ${level}, Дозволено: ${maxAllowed}`);
+                    // Можна примусово скинути на доступний рівень
+                    level = maxAllowed; 
+                }
+            }
+        } catch (e) {
+            console.error("❌ Помилка перевірки ліміту рівня:", e);
+        }
+    }
+
     const iframe = document.getElementById("unity-iframe");
     if (!iframe) {
         console.warn("⚠️ GameBridge: Unity Iframe не знайдено.");
@@ -161,3 +182,86 @@ window.trySendToUnity = function() {
         iframe.contentWindow.postMessage(cachedPayload, "*");
     }
 };
+
+window.addEventListener("message", async (event) => {
+    const data = event.data;
+
+    // --- НОВИЙ БЛОК: ОБРОБКА ПЕРЕМОГИ ---
+    if (typeof data === "string" && data.startsWith("LEVEL_COMPLETE|")) {
+        try {
+            const jsonPart = data.split("|")[1];
+            const result = JSON.parse(jsonPart);
+            const { topic, level, win } = result;
+            const studentId = localStorage.getItem("studentUid");
+
+            if (win && studentId) {
+                console.log(`🏆 Рівень ${level} пройдено у темі ${topic}. Оновлюємо базу...`);
+                
+                const userRef = doc(db, "users", studentId);
+                const userSnap = await getDoc(userRef);
+
+                if (userSnap.exists()) {
+                    const userData = userSnap.data();
+                    // Поточний прогрес у базі
+                    const currentMax = userData.progress?.[topic]?.maxAllowedLevel || 1;
+
+                    // Оновлюємо, тільки якщо пройдений рівень дорівнює поточному максимуму
+                    if (level >= currentMax) {
+                        const nextLevel = level + 1;
+                        await updateDoc(userRef, {
+                            [`progress.${topic}.maxAllowedLevel`]: nextLevel
+                        });
+                        console.log(`✅ Firebase оновлено! Наступний доступний рівень: ${nextLevel}`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("❌ Помилка при розборі LEVEL_COMPLETE:", e);
+        }
+        return; // Виходимо, бо це повідомлення ми вже обробили
+    }
+    // ------------------------------------
+    
+    if (data.type === "REQUEST_TEACHER_LIMIT") {
+        const topic = data.topic;
+        const studentId = localStorage.getItem("studentUid"); 
+
+        if (!studentId) return;
+
+        try {
+            const userRef = doc(db, "users", studentId);
+            const userSnap = await getDoc(userRef);
+            
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                
+                // Отримуємо значення з бази
+                const limitFromDB = userData.progress?.[topic]?.maxAllowedLevel;
+                const isBlocked = userData.progress?.[topic]?.isBlocked ?? false;
+
+                // ЛОГІКА: 
+                // 1. Якщо заблоковано вчителем -> 0 (все закрито)
+                // 2. Якщо ліміту в базі немає (undefined) -> 1 (перший рівень відкритий)
+                // 3. Якщо ліміт є -> використовуємо його (але не менше 1)
+                let finalLimit;
+                    if (isBlocked) {
+                        finalLimit = 1; 
+                        console.log(`🚫 Тема ${topic} заблокована вчителем. Доступний лише 1-й рівень.`);
+                    } else {
+                        finalLimit = limitFromDB || 1; // Якщо не блок, беремо прогрес із бази або 1
+                    }
+
+                const iframe = document.getElementById("unity-iframe");
+                if (iframe && iframe.contentWindow.unityInstance) {
+                    iframe.contentWindow.unityInstance.SendMessage(
+                        "LevelMenu", 
+                        "SetTeacherLimit", 
+                        finalLimit
+                    );
+                }
+            }
+        } catch (e) {
+            console.error("Помилка відправки ліміту в Unity:", e);
+        }
+    }
+});

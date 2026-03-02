@@ -57,19 +57,24 @@ window.addEventListener("message", (event) => {
 
     // 2. Запит ліміту рівня від вчителя
     else if (event.data && event.data.type === "REQUEST_TEACHER_LIMIT") {
-        if (user) {
-            const currentTopic = window.currentTopicId || "Fractions";
-            let limitVal = 99;
-            if (user.progress?.[currentTopic]?.maxAllowedLevel) {
-                limitVal = parseInt(user.progress[currentTopic].maxAllowedLevel);
-            }
-            
-            const target = iframe.contentWindow.unityInstance || window.unityGame;
-            if (target) {
-                target.SendMessage("MenuController", "SetTeacherLimit", limitVal);
+    const requestedTopic = event.data.topic || "Fractions";
+    const userDocRef = doc(db, "users", user.uid);
+    
+    // Питаємо базу напряму
+    getDoc(userDocRef).then((docSnap) => {
+        let limitVal = 1;
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.progress && data.progress[requestedTopic]) {
+                limitVal = data.progress[requestedTopic].maxAllowedLevel || 1;
             }
         }
-    }
+        
+        console.log(`📡 СВІЖИЙ ліміт з бази для ${requestedTopic}: ${limitVal}`);
+        const target = iframe.contentWindow.unityInstance || window.unityGame;
+        if (target) target.SendMessage("MenuController", "SetTeacherLimit", limitVal);
+    });
+}
 
     // 3. Обробка завершення рівня
     else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
@@ -212,40 +217,64 @@ export function setupUnityUI() {
 }
 
 // ==========================================
-// 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
+// 💾 ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ (ВИПРАВЛЕНО)
 // ==========================================
 async function saveGameResult(resultData, user) {
     try {
         const score = Number(resultData.score || 0);
         const userRef = doc(db, "users", user.uid); 
+        const topic = resultData.topic || "Fractions"; 
+        const currentLevel = parseInt(resultData.level || 1);
 
-        // 1. Перевіряємо стан чекбокса прямо зараз (перед збереженням)
+        // Перевірка бустерів
         const shieldCheckbox = document.querySelector('.booster-checkbox[value="sys_shield"]');
         const isShieldActive = shieldCheckbox ? shieldCheckbox.checked : false;
 
-        // 2. Створюємо "чистий" об'єкт для щоденника
         const cleanedData = {
             ...resultData,
-            // Якщо щит був, зануляємо помилки та ставимо 12, інакше лишаємо як є
             mistakes: isShieldActive ? 0 : (resultData.mistakes || 0),
             grade: isShieldActive ? 12 : (resultData.grade || 0),
             timestamp: serverTimestamp(),
             win: score > 0,
-            shieldUsed: isShieldActive // додаємо мітку для історії
+            shieldUsed: isShieldActive 
         };
 
-        // 3. Оновлюємо золото в профілі
+        // 1. Оновлюємо золото в Firebase
         await updateDoc(userRef, { 
             "profile.gold": increment(score) 
         });
 
-        // 4. Зберігаємо сесію з ВИПРАВЛЕНИМИ даними
+        // 2. Оновлюємо прогрес в Firebase (відкриваємо наступний рівень)
+        const nextLevel = currentLevel + 1;
+        await updateDoc(userRef, {
+            [`progress.${topic}.maxAllowedLevel`]: nextLevel,
+            [`progress.${topic}.isBlocked`]: false
+        });
+
+        // --- МИТТЄВЕ ОНОВЛЕННЯ ЛОКАЛЬНОГО ОБ'ЄКТА ---
+        // Це гарантує, що наступний запит REQUEST_TEACHER_LIMIT отримає вірне число
+        if (!user.progress) user.progress = {};
+        if (!user.progress[topic]) user.progress[topic] = {};
+        user.progress[topic].maxAllowedLevel = nextLevel;
+        // --------------------------------------------
+
+        // --- СИНХРОНІЗАЦІЯ З UNITY ---
+        const iframe = document.getElementById("unity-iframe");
+        if (iframe && iframe.contentWindow) {
+            const target = iframe.contentWindow.unityInstance || window.unityGame;
+            if (target) {
+                // Відправляємо в Unity повідомлення про локальне розблокування
+                target.SendMessage("MenuController", "UpdateLocalProgress", `${topic}|${currentLevel}`);
+            }
+        }
+
+        // 3. Зберігаємо сесію в історію ігор
         await addDoc(collection(db, "users", user.uid, "game_sessions"), cleanedData);
 
-        console.log(isShieldActive ? "🛡️ Щит спрацював: в базу записано 12 балів та 0 помилок!" : "✅ Результат збережено");
+        console.log(`✅ Прогрес оновлено: ${topic} рівень ${nextLevel} тепер доступний.`);
 
     } catch (e) { 
-        console.error("❌ Помилка збереження:", e); 
+        console.error("❌ Помилка у saveGameResult:", e); 
     }
 }
 

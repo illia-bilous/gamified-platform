@@ -720,47 +720,89 @@ label {
     border-bottom: 1px solid #ddd;
 }
 
-.class-grid {
+.class-grid-3x3 {
     display: grid;
-    /* Створює адаптивну сітку: 
-       мінімальна ширина картки 250px, займає стільки місця, скільки влізе */
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
-    gap: 20px;
+    grid-template-columns: repeat(3, 1fr); /* Рівно 3 колонки */
+    gap: 25px;
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
 }
 
-.class-card {
-    background-color: #f7f7f7;
-    border-radius: 10px;
-    padding: 20px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
-    cursor: pointer;
-    min-height: 120px;
+/* Кольорова картка класу */
+.class-card-colored {
+    border-radius: 20px;
+    padding: 30px 20px;
+    min-height: 160px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    border: 3px solid rgba(255,255,255,0.2);
+    text-align: center;
+}
+.class-card-colored:hover {
+    transform: translateY(-5px); 
+    box-shadow: 0 12px 25px rgba(0, 0, 0, 0.4);
 }
 
-.class-card:hover {
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
-    background-color: #ffe0b2; /* Легкий помаранчевий при наведенні */
+/* Заголовок класу на картці */
+.class-card-colored h3 {
+    color: white !important; /* ЗАВЖДИ БІЛИЙ */
+    font-size: 2.2rem !important;
+    margin: 0;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    border-bottom: none !important; /* Прибираємо лінію Moodle */
 }
 
-.class-card h3 {
-    margin-top: 0;
-    color: #333;
-    font-size: 1.5rem;
-    border-bottom: 2px solid #ff9800; /* Колір Moodle */
-    padding-bottom: 5px;
-    margin-bottom: 10px;
+/* Напис "Переглянути успішність" */
+.class-card-colored .card-footer {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 800;
+    font-size: 1rem;
+    text-transform: uppercase;
+    background: rgba(0, 0, 0, 0.2); /* Темніший фон за замовчуванням */
+    padding: 10px 15px;
+    border-radius: 12px;
+    width: 100%;
+    transition: all 0.3s ease; /* Плавна зміна кольору */
+    border: 1px solid transparent;
 }
 
-.class-card p {
-    color: #666;
-    font-size: 0.9rem;
+/* Ефект наведення ТІЛЬКИ на футер, коли ми наводимо на картку */
+.class-card-colored:hover .card-footer {
+    background: rgba(255, 255, 255, 0.25); /* Висвітлюємо кнопку */
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px); /* Легке підняття самої кнопки */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
+/* Адаптивність: якщо екран малий (планшет), робити 2 в ряд */
+@media (max-width: 900px) {
+    .class-grid-3x3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Якщо телефон — 1 в ряд */
+@media (max-width: 600px) {
+    .class-grid-3x3 { grid-template-columns: 1fr; }
+}
+
+.class-card-colored p {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+}
+
+/* Контейнер для кількості учнів */
+.class-card-students {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 1.1rem;
+    margin-top: -10px; /* Підтягуємо ближче до назви класу */
+    margin-bottom: 15px;
+    font-weight: 500;
+}
 /* Додайте це до вашого assets/css/styles.css */
 
 /* Стилізація профілю учня для вчителя */
