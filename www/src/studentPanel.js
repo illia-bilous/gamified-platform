@@ -68,6 +68,10 @@ window.addEventListener("message", (event) => {
             if (data.progress && data.progress[requestedTopic]) {
                 limitVal = data.progress[requestedTopic].maxAllowedLevel || 1;
             }
+
+            if (data.progress.allTopicsBlocked === true) {
+                    limitVal = 0; 
+                }
         }
         
         console.log(`📡 СВІЖИЙ ліміт з бази для ${requestedTopic}: ${limitVal}`);

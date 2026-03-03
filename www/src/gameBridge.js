@@ -221,7 +221,7 @@ window.addEventListener("message", async (event) => {
         return; // Виходимо, бо це повідомлення ми вже обробили
     }
     // ------------------------------------
-    
+
     if (data.type === "REQUEST_TEACHER_LIMIT") {
         const topic = data.topic;
         const studentId = localStorage.getItem("studentUid"); 
@@ -254,7 +254,7 @@ window.addEventListener("message", async (event) => {
                 const iframe = document.getElementById("unity-iframe");
                 if (iframe && iframe.contentWindow.unityInstance) {
                     iframe.contentWindow.unityInstance.SendMessage(
-                        "LevelMenu", 
+                        "MenuController", 
                         "SetTeacherLimit", 
                         finalLimit
                     );
