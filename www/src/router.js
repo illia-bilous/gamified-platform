@@ -75,6 +75,8 @@ function initializeApp() {
 
     initAuth(handleLoginSuccess);
 
+    initMobileLogic();
+    
     const user = getCurrentUser();
     if (user) {
         handleLoginSuccess(user.role);
@@ -157,6 +159,60 @@ function setupDashboardNavigation(screenId) {
             }
         };
     });
+}
+
+// =========================================================
+// 📱 МОБІЛЬНА АДАПТАЦІЯ ТА ГАМБУРГЕР
+// =========================================================
+
+function initMobileLogic() {
+    const setupHamburger = (btnId, screenId) => {
+        const btn = document.getElementById(btnId);
+        const screen = document.getElementById(screenId);
+        if (!btn || !screen) return;
+
+        const sidebar = screen.querySelector('.sidebar');
+
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('mobile-active');
+            // Ми більше не викликаємо btn.classList.toggle('open'), 
+            // тому іконка завжди залишається "трьома смужками"
+        };
+
+        sidebar.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', () => {
+                sidebar.classList.remove('mobile-active');
+            });
+        });
+    };
+
+    setupHamburger('hamburger-student', 'screen-student');
+    setupHamburger('hamburger-teacher', 'screen-teacher');
+
+    // Закриття сайдбару, якщо клікнули поза ним
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.sidebar') && !e.target.closest('.hamburger-menu')) {
+            document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('mobile-active'));
+        }
+    });
+
+    // 2. Логіка Орієнтації Екрана
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    checkOrientation(); // Початкова перевірка
+}
+
+function checkOrientation() {
+    const warning = document.getElementById('orientation-warning');
+    const isUnityActive = !document.getElementById('unity-container')?.classList.contains('hidden');
+    
+    // Якщо учень відкрив гру і тримає телефон вертикально (портретно)
+    if (isUnityActive && window.innerHeight > window.innerWidth) {
+        warning.style.display = 'flex';
+    } else {
+        warning.style.display = 'none';
+    }
 }
 
 initializeApp();

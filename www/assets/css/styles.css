@@ -363,6 +363,68 @@ label {
     font-size: 16px;
 }
 
+/* --- АДАПТИВНІСТЬ САЙДБАРУ ДЛЯ МОБІЛОК --- */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 260px; /* Трохи вужче для мобілок */
+        padding: 10px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* 1. Компактний блок профілю */
+    .sidebar-profile-info {
+        padding: 12px 10px !important; /* Замість 25px */
+        margin-bottom: 15px !important; /* Замість 30px */
+        flex-shrink: 0; /* Профіль не стискається, стискається меню */
+    }
+    /* 2. Зменшуємо аватар */
+    .avatar-wrapper {
+        width: 80px !important; /* Менший аватар */
+        height: 80px !important;
+        margin-bottom: 8px !important;
+    }
+
+    .sidebar-profile-info h4 {
+        font-size: 1.2rem !important; /* Замість 1.8rem */
+        margin-bottom: 5px !important;
+    }
+
+    .coin-balance-sidebar {
+        font-size: 1.4rem !important; /* Замість 2.4rem */
+        margin-top: 5px !important;
+    }
+
+    /* ВКЛЮЧАЄМО СКРОЛ ДЛЯ МЕНЮ */
+    .sidebar-nav {
+        flex-grow: 1; /* Забирає все місце, що залишилося */
+        overflow-y: auto; /* З'являється скрол, якщо кнопок багато */
+        padding-right: 5px; /* Місце для скролбару */
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .menu-item {
+        padding: 12px !important;
+        font-size: 0.9rem !important;
+        flex-shrink: 0; /* Кнопки не сплющуються */
+    }
+}
+
+/* ЕКСТРЕМАЛЬНИЙ РЕЖИМ (Горизонтальний телефон) */
+@media (max-height: 500px) and (orientation: landscape) {
+    .sidebar-profile-info {
+        display: none; /* В горизонталі краще сховати великий блок, щоб бачити кнопки */
+    }
+    
+    .sidebar-header h3 {
+        font-size: 1rem;
+        padding-bottom: 5px;
+    }
+}
+
 /* =========================================
    6. ГОЛОВНА ПАНЕЛЬ (ПРАВА ЧАСТИНА)
    ========================================= */
@@ -1346,5 +1408,162 @@ input::-webkit-inner-spin-button {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Утиліта для приховування */
+
+* {
+    box-sizing: border-box;
+}
+
+/* Таблиці на мобілках мають бути прокручуваними */
+.leaderboard-wrapper, .journal-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* --- МОБІЛЬНЕ МЕНЮ (Гамбургер) --- */
+/* --- СТИЛЬ ГАМБУРГЕРА (ЧИСТИЙ ТА СТАБІЛЬНИЙ) --- */
+.hamburger-menu {
+    display: none; /* Тільки для мобілок */
+    flex-direction: column;
+    justify-content: space-around;
+    width: 35px;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.7); /* Чіткіше на фоні гри */
+    border: 1px solid #f1c40f;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 6px;
+    z-index: 3001; /* ЗАВЖДИ ПОВЕРХ САЙДБАРУ */
+    position: fixed;
+    top: 15px;
+    left: 15px;
+}
+
+.hamburger-menu span {
+    width: 100%;
+    height: 3px;
+    background-color: #f1c40f;
+    border-radius: 10px;
+    transition: none; /* Жодних хрестиків */
+}
+
+/* Видалив блоки .hamburger-menu.open, щоб не було конфліктів */
+
+/* --- ПЛАВНИЙ СКРОЛ ДЛЯ ТАБЛИЦЬ --- */
+.journal-container {
+    -webkit-overflow-scrolling: touch; /* Плавність на iOS */
+    scrollbar-width: thin; /* Тонкий скрол для Firefox */
+    scrollbar-color: #f1c40f transparent;
+}
+
+/* --- АДАПТИВНІСТЬ --- */
+@media (max-width: 1024px) {
+    .hamburger-menu { display: flex; }
+
+    .sidebar {
+        position: fixed;
+        left: -280px; /* Повністю ховаємо */
+        top: 0;
+        bottom: 0;
+        width: 260px;
+        z-index: 2000;
+        transition: left 0.3s ease;
+        background: #1a1a1a;
+        box-shadow: none;
+    }
+
+    .sidebar.mobile-active {
+        left: 0 !important;
+        box-shadow: 5px 0 15px rgba(0,0,0,0.5);
+    }
+
+    .main-panel {
+        margin-left: 0 !important;
+        width: 100% !important;
+        padding: 10px;
+    }
+}
+
+/* --- ОПТИМІЗАЦІЯ ДЛЯ ГОРИЗОНТАЛЬНОГО РЕЖИМУ (LANDSCAPE) --- */
+@media (max-height: 500px) and (orientation: landscape) {
+    /* --- ВАШІ ІСНУЮЧІ ПРАВИЛА --- */
+    .page-header-description, .main-panel h1, .gold-line { 
+        display: none !important; 
+    }
+
+    /* --- ФІКС ДЛЯ UNITY (ЩОБ ВЛІЗЛО В ЕКРАН) --- */
+    
+    /* 1. Прибираємо відступи у головної панелі, щоб гра торкалася країв */
+    .main-panel {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 2. Ховаємо заголовок з бонусами/назвою теми над грою */
+    .student-game-header, .game-title {
+        display: none !important;
+    }
+
+    /* 3. Розтягуємо контейнер на весь доступний екран */
+    #unity-container {
+        width: 100vw !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        display: flex !important;
+        justify-content: center;
+        align-items: center;
+        background: #000; /* Чорний фон, якщо пропорції гри відрізняються */
+    }
+
+    /* 4. Сама гра має ігнорувати обмеження висоти */
+    #unity-iframe {
+        width: 100% !important;
+        height: 100% !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important; /* Прибираємо закруглення кутів */
+    }
+
+    /* --- ВАШІ ПРАВИЛА ДЛЯ ЖУРНАЛУ --- */
+    .journal-container {
+        max-height: 180px;
+        overflow-y: auto;
+    }
+}
+
+/* --- ФІКС ОВЕРЛЕЯ ОРІЄНТАЦІЇ --- */
+.orientation-overlay {
+    display: none; /* Керується через JS */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(20, 20, 20, 0.98);
+    z-index: 10000; /* Максимальний пріоритет */
+    color: white;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 20px;
+}
+
+.orientation-overlay p {
+    font-size: 1.5rem;
+    color: #f1c40f;
+    margin: 10px 0;
+}
+
+.rotate-icon {
+    font-size: 60px;
+    animation: rotate-anim 2s infinite;
+}
+
+@keyframes rotate-anim {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(90deg); }
+    100% { transform: rotate(0deg); }
+}
+
+/* Утиліти */
 .hidden { display: none !important; }

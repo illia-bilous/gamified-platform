@@ -115,6 +115,8 @@ function closeUnityGameUI() {
     if (startBtn) startBtn.style.display = "block"; 
     if (closeBtn) closeBtn.remove(); 
     if (iframe) iframe.src = "about:blank"; 
+
+    window.dispatchEvent(new Event('resize'));
 }
 window.closeUnityGame = closeUnityGameUI;
 
@@ -204,7 +206,9 @@ export function setupUnityUI() {
             
             unityContainer.classList.remove("hidden");
             newBtn.style.display = "none";
-
+            document.querySelector('.sidebar').classList.remove('mobile-active');
+            window.dispatchEvent(new Event('resize'));
+            
             if (!document.getElementById("btn-force-close-unity")) {
                 const closeBtn = document.createElement("button");
                 closeBtn.id = "btn-force-close-unity";

@@ -99,7 +99,11 @@
     </section>
     
     <section id="screen-student" class="screen dashboard">
-        
+        <button class="hamburger-menu" id="hamburger-student">
+        <span></span>
+        <span></span>
+        <span></span>
+        </button>
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h3>🧑‍🎓 Кабінет Учня</h3>
@@ -251,6 +255,12 @@
     </section>
 
     <section id="screen-teacher" class="screen dashboard">
+        <button class="hamburger-menu" id="hamburger-teacher">
+        <span></span>
+        <span></span>
+        <span></span>
+         </button>
+
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h3>🧑‍🏫 Вчительська</h3>
@@ -382,6 +392,14 @@
         </main>
     </section>
 
+    <div id="orientation-warning" class="orientation-overlay">
+        <div class="warning-content">
+            <div class="rotate-icon">🔄</div>
+            <h2>Будь ласка, переверніть пристрій</h2>
+            <p>Для навчання у ігровому форматі потрібен горизонтальний режим екрану</p>
+        </div>
+    </div>
+    
     <div id="avatar-modal-container"></div>
 
     <script type="module" src="src/firebase.js"></script>
