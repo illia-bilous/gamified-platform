@@ -326,6 +326,14 @@ export function renderStudentDiary(currentUser) {
 function updateHomeDisplay(currentUser) {
     if (!currentUser) return;
     document.getElementById("student-name-display").textContent = currentUser.name;
+
+    const loginEl = document.getElementById("student-login-display");
+    if (loginEl) {
+        // Якщо в об'єкті користувача поле називається username або login
+        const username = currentUser.loginID || currentUser.username || currentUser.login || "учень";
+        loginEl.textContent = `@${username}`;
+    }
+
     const classEl = document.getElementById("student-class-display");
     if (classEl) {
         // Використовуємо саме className, оскільки так воно названо в базі/auth.js

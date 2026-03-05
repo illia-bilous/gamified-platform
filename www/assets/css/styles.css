@@ -178,6 +178,25 @@ label {
     line-height: 1.2;
 }
 
+/* Логін учня */
+.user-login-text {
+    color: rgba(255, 255, 255, 0.5); /* Напівпрозорий для субтильності */
+    font-size: 0.9rem;
+    font-weight: normal;
+    margin-top: -8px;    /* Підтягуємо ближче до імені */
+    margin-bottom: 12px; /* Відступ до бейджа класу */
+    font-family: 'Courier New', Courier, monospace; /* Робимо вигляд "технічного" логіна */
+}
+
+/* Адаптація для мобілок (всередині медіа-запиту) */
+@media (max-width: 1024px) {
+    .user-login-text {
+        font-size: 0.8rem;
+        margin-top: -5px;
+        margin-bottom: 8px;
+    }
+}
+
 /* Бейдж класу */
 .class-badge {
     display: inline-block;
