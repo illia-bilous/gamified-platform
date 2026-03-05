@@ -239,7 +239,9 @@ label {
 .menu-item.logout {
     background-color: var(--danger);
     box-shadow: 0 3px 0 #c0392b;
-    margin-top: auto;
+    margin-top: 15px; /* Замість auto — фіксований відступ */
+    margin-bottom: 20px; /* Додаємо відступ знизу, щоб кнопка не липла до краю екрана */
+    flex-shrink: 0; /* 🔥 ГАРАНТІЯ: кнопка не стиснеться в нуль */
 }
 
 /* --- АВАТАР І ОЛІВЕЦЬ --- */
@@ -366,13 +368,31 @@ label {
 /* --- АДАПТИВНІСТЬ САЙДБАРУ ДЛЯ МОБІЛОК --- */
 @media (max-width: 1024px) {
     .sidebar {
-        width: 260px; /* Трохи вужче для мобілок */
-        padding: 10px;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
+        position: fixed; /* Щоб сайдбар не їхав разом з грою */
+        height: 100vh;  
+        height: 100dvh; 
+        top: 0;
+        left: 0;
     }
 
+    .sidebar-nav {
+        /* Дозволяємо кнопкам скролитися */
+        overflow-y: auto !important; 
+        overflow-x: hidden;
+        
+        /* Робимо скролбар видимим (золотистим) */
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent-gold) transparent;
+    }
+
+    /* Стиль скролбару для iPhone/Chrome */
+    .sidebar-nav::-webkit-scrollbar {
+        width: 4px;
+    }
+    .sidebar-nav::-webkit-scrollbar-thumb {
+        background: var(--accent-gold);
+        border-radius: 10px;
+    }
     /* 1. Компактний блок профілю */
     .sidebar-profile-info {
         padding: 12px 10px !important; /* Замість 25px */
