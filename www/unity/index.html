@@ -116,8 +116,11 @@
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
               }).then((unityInstance) => {
-                window.unityInstance = unityInstance;
                 document.querySelector("#unity-loading-bar").style.display = "none";
+                // Потрібно для платформи: studentPanel / gameBridge читають iframe.contentWindow.unityInstance
+                window.unityInstance = unityInstance;
+                window.unityGame = unityInstance;
+
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };
