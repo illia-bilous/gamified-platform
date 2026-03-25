@@ -1,8 +1,3 @@
-import { getCurrentUser } from "./auth.js";
-import { getShopItems, findItemInList, FALLBACK_ITEMS } from "./shopData.js";
-import { db } from "./firebase.js"; 
-import { sendConfigToUnity } from "./gameBridge.js"; 
-
 import { 
     collection, 
     query, 
@@ -18,6 +13,31 @@ import {
     limit,     
     increment 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getCurrentUser } from "./auth.js";
+import { getShopItems, findItemInList, FALLBACK_ITEMS } from "./shopData.js";
+import { db } from "./firebase.js";
+import {
+    sendConfigToUnity,
+    nextCalendarDayAfterKyivToday,
+    isExamTopicLockedByDate
+} from "./gameBridge.js";
+import { normalizeTopicKey } from "./mathTrainingGenerator.js";
+
+function getLaunchGameMode() {
+    const m = String(window.__mathMazeGameMode || "").toLowerCase().trim();
+    return m === "training" ? "training" : "exam";
+}
+
+function resolveTopicKeyForProgress(userData, topicRaw) {
+    const keys = Object.keys(userData?.progress || {});
+    const t = String(topicRaw || "Fractions");
+    const found = keys.find((k) => k.toLowerCase() === t.toLowerCase());
+    if (found) return found;
+    const canon = normalizeTopicKey(topicRaw);
+    const byCanon = keys.find((k) => k.toLowerCase() === canon.toLowerCase());
+    if (byCanon) return byCanon;
+    return canon;
+}
 
 // Глобальні змінні стану
 let leaderboardUnsubscribe = null;
@@ -48,37 +68,69 @@ window.addEventListener("message", (event) => {
             
             // Ми прибрали локальний об'єкт selectedBoosters, 
             // бо gameBridge.js сам зчитає стан чекбоксів з DOM.
-            console.log(`🎮 Запит конфігурації: ${topicName}, рівень ${levelRequest}`);
+            console.log(`🎮 Запит конфігурації: ${topicName}, рівень ${levelRequest}, режим ${getLaunchGameMode()}`);
             
-            // ВИПРАВЛЕНО: Видалено неіснуючу змінну selectedBoosters з аргументів
-            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest);
+            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest, getLaunchGameMode());
         }
     }
 
-    // 2. Запит ліміту рівня від вчителя
+    // 2. Запит ліміту рівня від вчителя (єдиний обробник — інакше два postMessage дають гонку й «3/4» на одній темі)
     else if (event.data && event.data.type === "REQUEST_TEACHER_LIMIT") {
-    const requestedTopic = event.data.topic || "Fractions";
-    const userDocRef = doc(db, "users", user.uid);
-    
-    // Питаємо базу напряму
-    getDoc(userDocRef).then((docSnap) => {
-        let limitVal = 1;
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.progress && data.progress[requestedTopic]) {
-                limitVal = data.progress[requestedTopic].maxAllowedLevel || 1;
+        const requestedTopic = event.data.topic || "Fractions";
+        const uid = user?.uid || localStorage.getItem("studentUid");
+        if (!uid) return;
+
+        const userDocRef = doc(db, "users", uid);
+
+        getDoc(userDocRef).then((docSnap) => {
+            const mode = getLaunchGameMode();
+            let limitVal = 1;
+
+            if (mode === "training") {
+                limitVal =
+                    docSnap.exists() && docSnap.data().progress?.allTopicsBlocked === true ? 1 : 992;
+            } else if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (isExamTopicLockedByDate(data, requestedTopic)) {
+                    limitVal = 0;
+                } else {
+                    const tKey = resolveTopicKeyForProgress(data, requestedTopic);
+                    if (data.progress && data.progress[tKey]) {
+                        limitVal = data.progress[tKey].maxAllowedLevel || 1;
+                    }
+                }
+                if (data.progress?.allTopicsBlocked === true) {
+                    limitVal = 0;
+                }
             }
 
-            if (data.progress.allTopicsBlocked === true) {
-                    limitVal = 0; 
-                }
-        }
-        
-        console.log(`📡 СВІЖИЙ ліміт з бази для ${requestedTopic}: ${limitVal}`);
-        const target = iframe.contentWindow.unityInstance || window.unityGame;
-        if (target) target.SendMessage("MenuController", "SetTeacherLimit", limitVal);
-    });
-}
+            console.log(`📡 Ліміт для ${requestedTopic} (${mode}): ${limitVal}`);
+            const target = iframe.contentWindow.unityInstance || window.unityGame;
+            if (target) target.SendMessage("MenuController", "SetTeacherLimit", limitVal);
+        });
+    }
+
+    // 2b. Програш у «Забігу» (надсилає Unity WebGL, якщо додано виклик postMessage)
+    else if (event.data && typeof event.data === "string" && event.data.startsWith("EXAM_LEVEL_FAILED|")) {
+        if (!user || getLaunchGameMode() !== "exam") return;
+        (async () => {
+            try {
+                const payload = JSON.parse(event.data.split("|")[1]);
+                const topicRaw = payload.topic || "Fractions";
+                const userRef = doc(db, "users", user.uid);
+                const snap = await getDoc(userRef);
+                if (!snap.exists()) return;
+                const topicKey = resolveTopicKeyForProgress(snap.data(), topicRaw);
+                const unlockDay = nextCalendarDayAfterKyivToday();
+                await updateDoc(userRef, {
+                    [`progress.${topicKey}.examUnlockDay`]: unlockDay
+                });
+                console.log(`🚫 Забіг: тему «${topicKey}» заблоковано до ${unlockDay}`);
+            } catch (e) {
+                console.error("EXAM_LEVEL_FAILED:", e);
+            }
+        })();
+    }
 
     // 3. Обробка завершення рівня
     else if (event.data && typeof event.data === "string" && event.data.startsWith("LEVEL_COMPLETE|")) {
@@ -107,14 +159,16 @@ window.addEventListener("message", (event) => {
 
 function closeUnityGameUI() {
     const unityContainer = document.getElementById("unity-container");
-    const startBtn = document.getElementById("btn-start-lesson");
     const closeBtn = document.getElementById("btn-force-close-unity");
     const iframe = document.getElementById("unity-iframe");
 
     if (unityContainer) unityContainer.classList.add("hidden");
-    if (startBtn) startBtn.style.display = "block"; 
+    document.querySelectorAll(".btn-start-game-mode").forEach((b) => {
+        b.style.display = "";
+    });
     if (closeBtn) closeBtn.remove(); 
     if (iframe) iframe.src = "about:blank"; 
+    window.__mathMazeGameMode = "exam";
 
     window.dispatchEvent(new Event('resize'));
 }
@@ -183,7 +237,7 @@ async function saveUserData(user) {
 // ==========================================
 export function setupUnityUI() {
     const unityContainer = document.getElementById("unity-container");
-    const startBtn = document.getElementById("btn-start-lesson");
+    const modeButtons = document.querySelectorAll(".btn-start-game-mode");
     const user = getCurrentUser(); 
 
     if (user) setupBoostersUI(user); 
@@ -196,31 +250,39 @@ export function setupUnityUI() {
         unityContainer.appendChild(iframe);
     }
 
-    if (startBtn && unityContainer) {
-        const newBtn = startBtn.cloneNode(true);
-        startBtn.parentNode.replaceChild(newBtn, startBtn);
+    if (modeButtons.length && unityContainer) {
+        modeButtons.forEach((btn) => {
+            const fresh = btn.cloneNode(true);
+            btn.parentNode.replaceChild(fresh, btn);
 
-        newBtn.onclick = () => {
-            const freshUser = getCurrentUser();
-            if (!freshUser) return alert("Ви не авторизовані!");
-            
-            unityContainer.classList.remove("hidden");
-            newBtn.style.display = "none";
-            document.querySelector('.sidebar').classList.remove('mobile-active');
-            window.dispatchEvent(new Event('resize'));
-            
-            if (!document.getElementById("btn-force-close-unity")) {
-                const closeBtn = document.createElement("button");
-                closeBtn.id = "btn-force-close-unity";
-                closeBtn.innerText = "✖ Закрити гру";
-                closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
-                closeBtn.onclick = closeUnityGameUI;
-                unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
-            }
+            fresh.onclick = () => {
+                const freshUser = getCurrentUser();
+                if (!freshUser) return alert("Ви не авторизовані!");
 
-            const frame = document.getElementById("unity-iframe");
-            frame.src = `unity/index.html?v=${Date.now()}`;
-        };
+                const mode = fresh.dataset.gameMode === "training" ? "training" : "exam";
+                window.__mathMazeGameMode = mode;
+                localStorage.setItem("studentUid", freshUser.uid);
+            
+                unityContainer.classList.remove("hidden");
+                document.querySelectorAll(".btn-start-game-mode").forEach((b) => {
+                    b.style.display = "none";
+                });
+                document.querySelector('.sidebar')?.classList.remove('mobile-active');
+                window.dispatchEvent(new Event('resize'));
+            
+                if (!document.getElementById("btn-force-close-unity")) {
+                    const closeBtn = document.createElement("button");
+                    closeBtn.id = "btn-force-close-unity";
+                    closeBtn.innerText = "✖ Закрити гру";
+                    closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
+                    closeBtn.onclick = closeUnityGameUI;
+                    unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
+                }
+
+                const frame = document.getElementById("unity-iframe");
+                frame.src = `unity/index.html?v=${Date.now()}`;
+            };
+        });
     }
 }
 
@@ -229,6 +291,7 @@ export function setupUnityUI() {
 // ==========================================
 async function saveGameResult(resultData, user) {
     try {
+        const mode = getLaunchGameMode();
         const score = Number(resultData.score || 0);
         const userRef = doc(db, "users", user.uid); 
         const topic = resultData.topic || "Fractions"; 
@@ -238,13 +301,16 @@ async function saveGameResult(resultData, user) {
         const shieldCheckbox = document.querySelector('.booster-checkbox[value="sys_shield"]');
         const isShieldActive = shieldCheckbox ? shieldCheckbox.checked : false;
 
+        const isWin = resultData.win === false ? false : score > 0;
+
         const cleanedData = {
             ...resultData,
             mistakes: isShieldActive ? 0 : (resultData.mistakes || 0),
             grade: isShieldActive ? 12 : (resultData.grade || 0),
             timestamp: serverTimestamp(),
-            win: score > 0,
-            shieldUsed: isShieldActive 
+            win: isWin,
+            shieldUsed: isShieldActive,
+            gameMode: mode
         };
 
         // 1. Оновлюємо золото в Firebase
@@ -252,34 +318,51 @@ async function saveGameResult(resultData, user) {
             "profile.gold": increment(score) 
         });
 
-        // 2. Оновлюємо прогрес в Firebase (відкриваємо наступний рівень)
-        const nextLevel = currentLevel + 1;
-        await updateDoc(userRef, {
-            [`progress.${topic}.maxAllowedLevel`]: nextLevel,
-            [`progress.${topic}.isBlocked`]: false
-        });
-
-        // --- МИТТЄВЕ ОНОВЛЕННЯ ЛОКАЛЬНОГО ОБ'ЄКТА ---
-        // Це гарантує, що наступний запит REQUEST_TEACHER_LIMIT отримає вірне число
-        if (!user.progress) user.progress = {};
-        if (!user.progress[topic]) user.progress[topic] = {};
-        user.progress[topic].maxAllowedLevel = nextLevel;
-        // --------------------------------------------
-
-        // --- СИНХРОНІЗАЦІЯ З UNITY ---
-        const iframe = document.getElementById("unity-iframe");
-        if (iframe && iframe.contentWindow) {
-            const target = iframe.contentWindow.unityInstance || window.unityGame;
-            if (target) {
-                // Відправляємо в Unity повідомлення про локальне розблокування
-                target.SendMessage("MenuController", "UpdateLocalProgress", `${topic}|${currentLevel}`);
-            }
+        if (mode === "training") {
+            await addDoc(collection(db, "users", user.uid, "game_sessions"), cleanedData);
+            console.log(`✅ Тренажер: +${score} золота, прогрес «Забігу» без змін.`);
+            return;
         }
 
-        // 3. Зберігаємо сесію в історію ігор
-        await addDoc(collection(db, "users", user.uid, "game_sessions"), cleanedData);
+        const snapExam = await getDoc(userRef);
+        const examData = snapExam.exists() ? snapExam.data() : {};
+        const topicKey = resolveTopicKeyForProgress(examData, topic);
 
-        console.log(`✅ Прогрес оновлено: ${topic} рівень ${nextLevel} тепер доступний.`);
+        if (!isWin) {
+            const unlockDay = nextCalendarDayAfterKyivToday();
+            await updateDoc(userRef, {
+                [`progress.${topicKey}.examUnlockDay`]: unlockDay
+            });
+            console.log(`🚫 Забіг: програш — тема «${topicKey}» недоступна в іспиті до ${unlockDay}.`);
+        }
+
+        // 2. Режим «Забіг»: розблоковуємо наступний рівень лише якщо це поточний «край» прогресу (не знижуємо max при повторі старого рівня)
+        const prevMax = examData.progress?.[topicKey]?.maxAllowedLevel || 1;
+        const nextLevel = currentLevel + 1;
+
+        if (isWin && currentLevel >= prevMax) {
+            await updateDoc(userRef, {
+                [`progress.${topicKey}.maxAllowedLevel`]: nextLevel,
+                [`progress.${topicKey}.isBlocked`]: false
+            });
+
+            if (!user.progress) user.progress = {};
+            if (!user.progress[topicKey]) user.progress[topicKey] = {};
+            user.progress[topicKey].maxAllowedLevel = nextLevel;
+
+            const iframe = document.getElementById("unity-iframe");
+            if (iframe && iframe.contentWindow) {
+                const target = iframe.contentWindow.unityInstance || window.unityGame;
+                if (target) {
+                    target.SendMessage("MenuController", "UpdateLocalProgress", `${topic}|${currentLevel}`);
+                }
+            }
+            console.log(`✅ Забіг: прогрес ${topicKey} → доступний рівень до ${nextLevel}.`);
+        } else if (isWin) {
+            console.log(`ℹ️ Забіг: повтор рівня ${currentLevel} (max уже ${prevMax}) — золото нараховано, прогрес не змінюємо.`);
+        }
+
+        await addDoc(collection(db, "users", user.uid, "game_sessions"), cleanedData);
 
     } catch (e) { 
         console.error("❌ Помилка у saveGameResult:", e); 
@@ -380,7 +463,9 @@ function startLiveGoldTracker(userId) {
 export async function initStudentPanel() {
     let user = getCurrentUser();
     if (!user) return;
-    
+
+    localStorage.setItem("studentUid", user.uid);
+
     startLiveGoldTracker(user.uid);
     if (shopUnsubscribe) shopUnsubscribe();
     
