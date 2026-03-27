@@ -6,6 +6,37 @@
     <title>Unity Web Player | MathMaze</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden; /* remove inner iframe scrollbars */
+        background: #231f20;
+      }
+      /* Show fullscreen button over the canvas (not in clipped footer) */
+      #unity-footer {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 5;
+      }
+      #unity-logo-title-footer,
+      #unity-build-title {
+        display: none !important;
+      }
+      #unity-fullscreen-button {
+        width: 42px !important;
+        height: 42px !important;
+        background-size: 28px 28px !important;
+        border-radius: 8px;
+        background-color: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .unity-mobile #unity-footer {
+        display: block !important;
+      }
+    </style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -120,7 +151,6 @@
                 // Потрібно для платформи: studentPanel / gameBridge читають iframe.contentWindow.unityInstance
                 window.unityInstance = unityInstance;
                 window.unityGame = unityInstance;
-
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };

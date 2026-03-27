@@ -33,6 +33,19 @@ function makeWrongNumeric(correct, count = 3) {
     return shuffle([...set]);
 }
 
+function pickPowerTaskWithinLimit(buildTask, maxAbsAnswer = 9999, tries = 40) {
+    for (let i = 0; i < tries; i++) {
+        const task = buildTask();
+        const ans = Number(task.answer);
+        if (Number.isFinite(ans) && Math.abs(ans) <= maxAbsAnswer) return task;
+    }
+    return buildTask();
+}
+
+function formatFraction(n, d) {
+    return `${n}/${d}`;
+}
+
 /**
  * Ключ теми як у Firestore / редактора вчителя: Fractions | Powers | Quadratics.
  * Unity часто шле українські назви («Рівняння») — їх треба звести до Quadratics.
@@ -60,12 +73,14 @@ export function normalizeTopicKey(topic) {
 function genFractions(level) {
     let question;
     let answer;
+    let explanation;
     if (level <= 1) {
         const b = randInt(2, 8);
         const a = randInt(1, b - 1);
         question = `Спрости дріб: ${a}/${b}`;
         const g = gcd(a, b);
         answer = String(a / g) + "/" + String(b / g);
+        explanation = `Знайди НСД(${a}, ${b}) = ${g}. Поділи чисельник і знаменник: ${a}/${b} = ${a / g}/${b / g}.`;
     } else if (level === 2) {
         const d1 = randInt(2, 6);
         const d2 = randInt(2, 6);
@@ -76,6 +91,10 @@ function genFractions(level) {
         const den = d1 * d2;
         const g = gcd(num, den);
         answer = String(num / g) + "/" + String(den / g);
+        explanation =
+            `До спільного знаменника ${den}: ${formatFraction(n1, d1)} = ${n1 * d2}/${den}, ` +
+            `${formatFraction(n2, d2)} = ${n2 * d1}/${den}. ` +
+            `Сума = ${num}/${den} = ${num / g}/${den / g}.`;
     } else if (level === 3) {
         const d1 = randInt(3, 9);
         const d2 = randInt(3, 9);
@@ -89,6 +108,10 @@ function genFractions(level) {
         }
         const g = gcd(num, den);
         answer = String(num / g) + "/" + String(den / g);
+        explanation =
+            `До спільного знаменника ${den}: ${formatFraction(n1, d1)} = ${n1 * d2}/${den}, ` +
+            `${formatFraction(n2, d2)} = ${n2 * d1}/${den}. ` +
+            `Різниця = ${num}/${den} = ${num / g}/${den / g}.`;
     } else {
         const a = randInt(2, 7);
         const b = randInt(2, 7);
@@ -99,8 +122,11 @@ function genFractions(level) {
         const den = b * d;
         const g = gcd(num, den);
         answer = String(num / g) + "/" + String(den / g);
+        explanation =
+            `При множенні дробів множимо чисельники і знаменники: ` +
+            `${a}*${c}/${b}*${d} = ${num}/${den} = ${num / g}/${den / g}.`;
     }
-    return { question, answer, wrongAnswers: makeWrongAnswersFraction(answer) };
+    return { question, answer, wrongAnswers: makeWrongAnswersFraction(answer), explanation };
 }
 
 function gcd(x, y) {
@@ -133,32 +159,53 @@ function makeWrongAnswersFraction(answer) {
 }
 
 function genPowers(level) {
-    let question;
-    let answer;
     if (level <= 1) {
-        const a = randInt(2, 9);
-        const b = 2;
-        question = `Обчисли: ${a}^${b}`;
-        answer = String(a * a);
+        const a = randInt(2, 12);
+        const answer = String(a * a);
+        return {
+            question: `Обчисли: ${a}^2`,
+            answer,
+            wrongAnswers: makeWrongNumeric(answer),
+            explanation: `${a}^2 = ${a} * ${a} = ${answer}.`
+        };
     } else if (level === 2) {
-        const a = randInt(2, 6);
-        const b = 3;
-        question = `Обчисли: ${a}^${b}`;
-        answer = String(a ** b);
+        const a = randInt(2, 9);
+        const answer = String(a ** 3);
+        return {
+            question: `Обчисли: ${a}^3`,
+            answer,
+            wrongAnswers: makeWrongNumeric(answer),
+            explanation: `${a}^3 = ${a} * ${a} * ${a} = ${answer}.`
+        };
     } else if (level === 3) {
-        const a = randInt(2, 5);
-        const m = randInt(2, 4);
-        const n = randInt(2, 4);
-        question = `Обчисли: (${a}^${m})^${n}`;
-        answer = String(a ** (m * n));
+        return pickPowerTaskWithinLimit(() => {
+            const a = randInt(2, 8);
+            const m = randInt(2, 3);
+            const n = 2;
+            const pow = m * n;
+            const answer = String(a ** pow);
+            return {
+                question: `Обчисли: (${a}^${m})^${n}`,
+                answer,
+                wrongAnswers: makeWrongNumeric(answer),
+                explanation: `Степінь степеня: (a^m)^n = a^(m*n). Тобто (${a}^${m})^${n} = ${a}^${pow} = ${answer}.`
+            };
+        });
     } else {
-        const a = randInt(2, 6);
-        const m = randInt(2, 4);
-        const n = randInt(2, 4);
-        question = `Обчисли: ${a}^${m} · ${a}^${n}`;
-        answer = String(a ** (m + n));
+        return pickPowerTaskWithinLimit(() => {
+            const a = randInt(2, 7);
+            const m = randInt(2, 3);
+            const n = randInt(2, 3);
+            const pow = m + n;
+            const answer = String(a ** pow);
+            return {
+                question: `Обчисли: ${a}^${m} · ${a}^${n}`,
+                answer,
+                wrongAnswers: makeWrongNumeric(answer),
+                explanation: `Однакова основа: a^m * a^n = a^(m+n). Тобто ${a}^${m} * ${a}^${n} = ${a}^${pow} = ${answer}.`
+            };
+        });
     }
-    return { question, answer, wrongAnswers: makeWrongNumeric(answer) };
 }
 
 function fmtQuadSign(val, varPart) {
@@ -171,11 +218,13 @@ function fmtQuadSign(val, varPart) {
 function genQuadratics(level) {
     let question;
     let answer;
+    let explanation;
     if (level <= 1) {
         const x = randInt(-7, 7);
         const lhs = x >= 0 ? `(x − ${x})²` : `(x + ${-x})²`;
         question = `Розв'яж: ${lhs} = 0`;
         answer = String(x);
+        explanation = `Квадрат дорівнює нулю, коли вираз у дужках 0. Отже x = ${x}.`;
     } else if (level === 2) {
         const r1 = randInt(-5, 5);
         let r2 = randInt(-5, 5);
@@ -186,10 +235,12 @@ function genQuadratics(level) {
         const last = c === 0 ? "" : fmtQuadSign(c, "");
         question = `Добуток коренів рівняння x²${mid}${last} = 0`;
         answer = String(r1 * r2);
+        explanation = `За теоремою Вієта для x² + bx + c = 0: x1*x2 = c. Тут c = ${c}, тому добуток = ${answer}.`;
     } else if (level === 3) {
         const k = randInt(1, 8);
         question = `Дискримінант: x² − ${2 * k}x + ${k * k} = 0`;
         answer = "0";
+        explanation = `Це повний квадрат: x² − 2*${k}x + ${k}² = (x − ${k})². Для такого рівняння D = 0.`;
     } else {
         const a = randInt(2, 4);
         const b = randInt(3, 12);
@@ -197,12 +248,13 @@ function genQuadratics(level) {
         const D = b * b - 4 * a * c;
         question = `Дискримінант: ${a}x² + ${b}x + ${c} = 0`;
         answer = String(D);
+        explanation = `Формула: D = b² − 4ac = ${b}² − 4*${a}*${c} = ${b * b} − ${4 * a * c} = ${D}.`;
     }
-    return { question, answer, wrongAnswers: makeWrongNumeric(answer) };
+    return { question, answer, wrongAnswers: makeWrongNumeric(answer), explanation };
 }
 
 /**
- * @returns {{ question: string, answer: string, wrongAnswers: string[], timeLimit: number, reward: number }}
+ * @returns {{ question: string, answer: string, wrongAnswers: string[], explanation: string, timeLimit: number, reward: number }}
  */
 export function generateTrainingTask(topicRaw, levelRaw) {
     const topic = normalizeTopicKey(topicRaw);
@@ -220,6 +272,7 @@ export function generateTrainingTask(topicRaw, levelRaw) {
         question: task.question,
         answer: task.answer,
         wrongAnswers: task.wrongAnswers,
+        explanation: task.explanation || "",
         timeLimit: baseTime,
         reward: baseReward
     };

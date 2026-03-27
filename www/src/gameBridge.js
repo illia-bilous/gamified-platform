@@ -233,6 +233,9 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
             if (Array.isArray(foundTask.wrongAnswers)) {
                 finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
             }
+            if (typeof foundTask.explanation === "string") {
+                finalConfig.explanation = foundTask.explanation;
+            }
 
             finalConfig.time = foundTask.timeLimit ? parseInt(foundTask.timeLimit, 10) : 120;
 
