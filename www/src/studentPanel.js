@@ -160,7 +160,6 @@ window.addEventListener("message", (event) => {
 function closeUnityGameUI() {
     const unityContainer = document.getElementById("unity-container");
     const closeBtn = document.getElementById("btn-force-close-unity");
-    const mobileFsBtn = document.getElementById("btn-mobile-fullscreen-unity");
     const iframe = document.getElementById("unity-iframe");
 
     if (unityContainer) unityContainer.classList.add("hidden");
@@ -168,7 +167,6 @@ function closeUnityGameUI() {
         b.style.display = "";
     });
     if (closeBtn) closeBtn.remove();
-    if (mobileFsBtn) mobileFsBtn.remove();
     if (document.fullscreenElement || document.webkitFullscreenElement) {
         const exitFs = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
         if (exitFs) exitFs.call(document);
@@ -179,81 +177,6 @@ function closeUnityGameUI() {
     window.dispatchEvent(new Event('resize'));
 }
 window.closeUnityGame = closeUnityGameUI;
-
-function isMobileViewport() {
-    return window.matchMedia("(max-width: 1024px)").matches;
-}
-
-function isUnityFullscreen() {
-    const unityContainer = document.getElementById("unity-container");
-    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    return !!unityContainer && fsEl === unityContainer;
-}
-
-function updateUnityFullscreenButtonText() {
-    const btn = document.getElementById("btn-mobile-fullscreen-unity");
-    if (!btn) return;
-    btn.innerText = isUnityFullscreen() ? "↙ Згорнути" : "⛶ На весь екран";
-}
-
-function refreshUnityViewportLayout() {
-    const unityContainer = document.getElementById("unity-container");
-    const frame = document.getElementById("unity-iframe");
-    if (!unityContainer || unityContainer.classList.contains("hidden")) return;
-
-    // Форсуємо перерахунок layout після виходу з fullscreen на мобільних браузерах.
-    if (frame) {
-        frame.style.display = "none";
-        requestAnimationFrame(() => {
-            frame.style.display = "";
-        });
-    }
-
-    // Частина браузерів оновлює viewport із затримкою.
-    window.dispatchEvent(new Event("resize"));
-    setTimeout(() => window.dispatchEvent(new Event("resize")), 120);
-    setTimeout(() => window.dispatchEvent(new Event("resize")), 320);
-
-    // Жорсткий fallback для мобільного Chrome/Samsung Internet:
-    // панель адреси може змінювати висоту viewport із затримкою.
-    if (window.matchMedia("(max-width: 1024px)").matches) {
-        const applyMobileHeight = () => {
-            const vv = window.visualViewport;
-            const vh = vv && vv.height ? vv.height : window.innerHeight;
-            const targetPx = Math.max(260, Math.floor(vh * 0.56));
-            unityContainer.style.height = `${targetPx}px`;
-            unityContainer.style.minHeight = `${Math.max(240, Math.floor(vh * 0.42))}px`;
-        };
-
-        applyMobileHeight();
-        setTimeout(applyMobileHeight, 120);
-        setTimeout(applyMobileHeight, 320);
-        setTimeout(applyMobileHeight, 700);
-    }
-}
-
-function toggleUnityFullscreen() {
-    const unityContainer = document.getElementById("unity-container");
-    if (!unityContainer) return;
-
-    if (isUnityFullscreen()) {
-        const exitFs = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
-        if (exitFs) exitFs.call(document);
-        return;
-    }
-
-    const reqFs = unityContainer.requestFullscreen || unityContainer.webkitRequestFullscreen || unityContainer.msRequestFullscreen;
-    if (reqFs) reqFs.call(unityContainer);
-}
-
-document.addEventListener("fullscreenchange", () => {
-    updateUnityFullscreenButtonText();
-    refreshUnityViewportLayout();
-});
-document.addEventListener("webkitfullscreenchange", () => {
-    updateUnityFullscreenButtonText();
-    refreshUnityViewportLayout();
-});
 
 // ==========================================
 // 🚀 БУСТЕРИ UI
@@ -358,16 +281,6 @@ export function setupUnityUI() {
                     closeBtn.style.cssText = "margin-bottom: 10px; background: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; float: right; border-radius: 5px; font-weight: bold;";
                     closeBtn.onclick = closeUnityGameUI;
                     unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
-                }
-
-                if (!document.getElementById("btn-mobile-fullscreen-unity")) {
-                    const fsBtn = document.createElement("button");
-                    fsBtn.id = "btn-mobile-fullscreen-unity";
-                    fsBtn.innerText = "⛶ На весь екран";
-                    fsBtn.style.cssText = "background: #2c3e50; color: white; border: 1px solid rgba(255,255,255,0.35); padding: 10px 12px; cursor: pointer; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35);";
-                    fsBtn.onclick = toggleUnityFullscreen;
-                    document.body.appendChild(fsBtn);
-                    updateUnityFullscreenButtonText();
                 }
 
                 const frame = document.getElementById("unity-iframe");
