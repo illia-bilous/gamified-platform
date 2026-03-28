@@ -54,6 +54,30 @@ const TRAINING_REWARD_MULT = 0.35;
 const EXAM_TIME_MULT = 0.82;
 const EXAM_REWARD_MULT = 1.55;
 
+/**
+ * Повернення в Unity → Menu_Levels при добовому локі теми.
+ * Синхронний alert блокує WebGL — SendMessage часто не виконується до закриття діалогу.
+ * Тому: кілька спроб + postMessage у вікно iframe (див. www/unity/index.html).
+ */
+function requestUnityReturnToLevelMenu() {
+    const iframe = document.getElementById("unity-iframe");
+    if (!iframe?.contentWindow) return;
+    const cw = iframe.contentWindow;
+    const kick = () => {
+        try {
+            cw.postMessage({ type: "MATHMAZE_FORCE_LEVEL_MENU" }, "*");
+        } catch (e) {}
+        const u = cw.unityInstance;
+        if (u && typeof u.SendMessage === "function") {
+            try {
+                u.SendMessage("GameManager", "ReturnToLevelMenuFromWebLock", "");
+            } catch (e) {}
+        }
+    };
+    kick();
+    [50, 120, 250, 500, 1000, 1800].forEach((ms) => setTimeout(kick, ms));
+}
+
 // Допоміжна функція для пошуку теми без урахування регістру (Fractions == fractions)
 function findTopicCaseInsensitive(data, topic) {
     if (!data) return null;
@@ -127,9 +151,12 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
             const userSnap = await getDoc(userRef);
             if (userSnap.exists() && isExamTopicLockedByDate(userSnap.data(), topic)) {
                 console.warn(`🚫 Забіг: тема «${topic}» тимчасово заблокована після програшу.`);
-                alert(
-                    "Цю тему в режимі «Забіг» тимчасово заблоковано до завтра (після невдалої спроби). Скористайся тренажером або зайди завтра."
-                );
+                requestUnityReturnToLevelMenu();
+                setTimeout(() => {
+                    alert(
+                        "Цю тему в режимі «Забіг» тимчасово заблоковано до завтра (після невдалої спроби). Скористайся тренажером або зайди завтра."
+                    );
+                }, 400);
                 return;
             }
         } catch (e) {

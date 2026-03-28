@@ -670,6 +670,13 @@ async function saveGameResult(resultData, user) {
                 [`progress.${topicKey}.examUnlockDay`]: unlockDay
             });
             console.log(`🚫 Забіг: програш — тема «${topicKey}» недоступна в іспиті до ${unlockDay}.`);
+            if (resultData.tabSwitchForfeit) {
+                setTimeout(() => {
+                    alert(
+                        "Цю тему в режимі «Забіг» тимчасово заблоковано до завтра (після невдалої спроби). Скористайся тренажером або зайди завтра."
+                    );
+                }, 300);
+            }
         }
 
         // 2. Режим «Забіг»: розблоковуємо наступний рівень лише якщо це поточний «край» прогресу (не знижуємо max при повторі старого рівня)
