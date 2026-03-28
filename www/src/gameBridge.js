@@ -263,6 +263,12 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
     if (unityGame) {
         console.log("✅ Відправка до GameManager:", unityConfig, `(mode=${gameMode})`);
         unityGame.SendMessage("GameManager", "AcceptConfig", payload);
+        window.__unityPlayContext = {
+            topic,
+            level,
+            mode: gameMode,
+            at: Date.now()
+        };
     }
 }
 

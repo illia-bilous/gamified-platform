@@ -47,6 +47,34 @@ let cachedShopItems = null;
 let isProcessingReward = false; 
 let shopUnsubscribe = null;
 
+/** Анти-чит: здача рівня при зникненні вкладки (мобільні / перемикання додатків) */
+let tabSwitchHideTimer = null;
+let tabSwitchForfeitDone = false;
+let tabSwitchListenersAttached = false;
+let unityTabVisibilityPollId = null;
+let unityMobileFocusPollId = null;
+let mobileFocusLostSince = null;
+let unityRafWatchId = 0;
+let lastUnityRafTs = 0;
+let unityIframeHeartbeatId = null;
+let unityIframeEverPinged = false;
+let iframePingRateFailStreak = 0;
+const TAB_SWITCH_HIDE_MS = 550;
+/**
+ * У фоні Chrome часто НЕ зупиняє setInterval, а зріджує (~1 раз/с).
+ * Тоді «немає ping 3 с» ніколи не спрацьовує. Рахуємо щільність ping за вікно.
+ */
+const IFRAME_PING_WINDOW_MS = 2000;
+const IFRAME_MIN_PINGS_IN_WINDOW = 4;
+const IFRAME_PING_CHECK_MS = 500;
+const IFRAME_PING_RATE_FAILS_NEEDED = 2;
+const IFRAME_PING_CTX_GRACE_MS = 9000;
+/** На багатьох телефонах document.hidden лишається false у фоні — ловимо втрату фокусу документа */
+const MOBILE_FOCUS_LOST_MS = 700;
+/** Якщо між кадрами > цього значення (мс), типово вкладку приглушили / вийшли з браузера */
+const RAF_SUSPEND_MS = 3800;
+const RAF_CTX_MIN_AGE_MS = 6000;
+
 const DEFAULT_AVATAR = 'assets/img/base.png';
 const AVAILABLE_AVATARS = [ 'assets/img/boy.png', 'assets/img/girl.png' ];
 window.currentTopicId = null; 
@@ -54,9 +82,276 @@ window.currentTopicId = null;
 // ==========================================
 // 🎮 ГЛОБАЛЬНИЙ СЛУХАЧ UNITY
 // ==========================================
+function clearTabSwitchHideTimer() {
+    if (tabSwitchHideTimer != null) {
+        clearTimeout(tabSwitchHideTimer);
+        tabSwitchHideTimer = null;
+    }
+}
+
+function isUnityGameVisible() {
+    const unityContainer = document.getElementById("unity-container");
+    return !!(unityContainer && !unityContainer.classList.contains("hidden"));
+}
+
+function isDocumentHiddenForGame() {
+    return document.hidden || document.visibilityState === "hidden";
+}
+
+function isMobileViewportAntiCheat() {
+    return window.matchMedia("(max-width: 1024px)").matches;
+}
+
+function pageLostFocusForAntiCheat() {
+    return typeof document.hasFocus === "function" && !document.hasFocus();
+}
+
+function shouldForfeitAfterAwayTime() {
+    if (isDocumentHiddenForGame()) return true;
+    if (isMobileViewportAntiCheat() && pageLostFocusForAntiCheat()) return true;
+    return false;
+}
+
+function scheduleTabSwitchPenalty(reason) {
+    if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+    clearTabSwitchHideTimer();
+    tabSwitchHideTimer = setTimeout(() => {
+        tabSwitchHideTimer = null;
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+        if (!shouldForfeitAfterAwayTime()) return;
+        tryApplyTabSwitchForfeit(reason);
+    }, TAB_SWITCH_HIDE_MS);
+}
+
+/** Довіра сигналу з вікна Unity-iframe (на мобільних батьківський document часто «бреше»). */
+function scheduleTabSwitchPenaltyIframeTrust(reason) {
+    if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+    clearTabSwitchHideTimer();
+    tabSwitchHideTimer = setTimeout(() => {
+        tabSwitchHideTimer = null;
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+        tryApplyTabSwitchForfeit(reason);
+    }, TAB_SWITCH_HIDE_MS);
+}
+
+function startUnityIframeHeartbeatWatch() {
+    stopUnityIframeHeartbeatWatch();
+    unityIframeEverPinged = false;
+    iframePingRateFailStreak = 0;
+    window.__lastUnityIframePing = Date.now();
+    window.__unityIframePingTimes = [];
+    unityIframeHeartbeatId = setInterval(() => {
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+        const ctx = window.__unityPlayContext;
+        if (!ctx || !unityIframeEverPinged) return;
+        if (Date.now() - ctx.at < IFRAME_PING_CTX_GRACE_MS) return;
+
+        const now = Date.now();
+        const times = (window.__unityIframePingTimes || []).filter((x) => now - x <= IFRAME_PING_WINDOW_MS);
+        window.__unityIframePingTimes = times;
+        const count = times.length;
+
+        if (count < IFRAME_MIN_PINGS_IN_WINDOW) {
+            iframePingRateFailStreak += 1;
+            if (iframePingRateFailStreak >= IFRAME_PING_RATE_FAILS_NEEDED) {
+                tryApplyTabSwitchForfeit("iframe-ping-rate");
+            }
+        } else {
+            iframePingRateFailStreak = 0;
+        }
+    }, IFRAME_PING_CHECK_MS);
+}
+
+function stopUnityIframeHeartbeatWatch() {
+    if (unityIframeHeartbeatId != null) {
+        clearInterval(unityIframeHeartbeatId);
+        unityIframeHeartbeatId = null;
+    }
+    iframePingRateFailStreak = 0;
+}
+
+function startUnityTabVisibilityPoll() {
+    stopUnityTabVisibilityPoll();
+    unityTabVisibilityPollId = setInterval(() => {
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+        if (!isDocumentHiddenForGame()) return;
+        if (tabSwitchHideTimer != null) return;
+        scheduleTabSwitchPenalty("poll");
+    }, 320);
+}
+
+function stopUnityTabVisibilityPoll() {
+    if (unityTabVisibilityPollId != null) {
+        clearInterval(unityTabVisibilityPollId);
+        unityTabVisibilityPollId = null;
+    }
+}
+
+/** Окремо від poll: на мобільних «втрата фокусу» без hidden не можна крутити через schedule (таймер би вічно скидався). */
+function startUnityMobileFocusWatch() {
+    stopUnityMobileFocusWatch();
+    if (!isMobileViewportAntiCheat()) return;
+    unityMobileFocusPollId = setInterval(() => {
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+        if (isDocumentHiddenForGame()) {
+            mobileFocusLostSince = null;
+            return;
+        }
+        if (!pageLostFocusForAntiCheat()) {
+            mobileFocusLostSince = null;
+            return;
+        }
+        const now = Date.now();
+        if (mobileFocusLostSince == null) mobileFocusLostSince = now;
+        if (now - mobileFocusLostSince >= MOBILE_FOCUS_LOST_MS) {
+            tryApplyTabSwitchForfeit("mobile-focus");
+        }
+    }, 200);
+}
+
+function stopUnityMobileFocusWatch() {
+    if (unityMobileFocusPollId != null) {
+        clearInterval(unityMobileFocusPollId);
+        unityMobileFocusPollId = null;
+    }
+    mobileFocusLostSince = null;
+}
+
+function stopUnityRafWatch() {
+    if (unityRafWatchId) {
+        cancelAnimationFrame(unityRafWatchId);
+        unityRafWatchId = 0;
+    }
+}
+
+/** Додатково на мобільних: у фоні rAF майже зупиняється — видно великий розрив між кадрами. */
+function startUnityRafWatch() {
+    stopUnityRafWatch();
+    if (!isMobileViewportAntiCheat()) return;
+    lastUnityRafTs = performance.now();
+
+    function step() {
+        if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward || !isMobileViewportAntiCheat()) {
+            stopUnityRafWatch();
+            return;
+        }
+
+        const now = performance.now();
+        const dt = now - lastUnityRafTs;
+        lastUnityRafTs = now;
+
+        const ctx = window.__unityPlayContext;
+        if (
+            ctx?.at &&
+            Date.now() - ctx.at >= RAF_CTX_MIN_AGE_MS &&
+            dt > RAF_SUSPEND_MS
+        ) {
+            tryApplyTabSwitchForfeit("raf-background");
+            return;
+        }
+
+        unityRafWatchId = requestAnimationFrame(step);
+    }
+
+    unityRafWatchId = requestAnimationFrame(step);
+}
+
+/**
+ * Page Visibility + blur/focus + pagehide + (де є) freeze.
+ * На деяких телефонах лише visibility недостатньо — додаємо window blur.
+ */
+function tryApplyTabSwitchForfeit(reason) {
+    clearTabSwitchHideTimer();
+    if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
+    const user = getCurrentUser();
+    if (!user || user.role !== "student") return;
+    const ctx = window.__unityPlayContext;
+    if (!ctx || !ctx.topic) return;
+
+    tabSwitchForfeitDone = true;
+    window.__unityPlayContext = null;
+
+    const resultData = {
+        score: 0,
+        grade: 2,
+        mistakes: 99,
+        level: parseInt(ctx.level, 10) || 1,
+        topic: ctx.topic,
+        timeSpent: 0,
+        win: false,
+        shieldUsed: false,
+        tabSwitchForfeit: true,
+        forfeitReason: reason || "visibility"
+    };
+
+    isProcessingReward = true;
+    void saveGameResult(resultData, user).finally(() => {
+        isProcessingReward = false;
+        closeUnityGameUI();
+    });
+}
+
+function installTabSwitchAntiCheatOnce() {
+    if (tabSwitchListenersAttached) return;
+    tabSwitchListenersAttached = true;
+
+    document.addEventListener("visibilitychange", () => {
+        if (!isUnityGameVisible()) return;
+        if (isDocumentHiddenForGame()) {
+            scheduleTabSwitchPenalty("visibility");
+        } else {
+            clearTabSwitchHideTimer();
+        }
+    });
+
+    // Blur: на телефоні часто приходить при «Додому», навіть коли document.hidden лишається false.
+    // На десктопі після тайм-ауту штраф лише якщо shouldForfeitAfterAwayTime() (зазвичай hidden).
+    window.addEventListener(
+        "blur",
+        () => {
+            if (!isUnityGameVisible()) return;
+            scheduleTabSwitchPenalty("blur");
+        },
+        true
+    );
+
+    window.addEventListener("pagehide", () => {
+        tryApplyTabSwitchForfeit("pagehide");
+    });
+
+    document.addEventListener("freeze", () => {
+        if (!isUnityGameVisible()) return;
+        tryApplyTabSwitchForfeit("freeze");
+    });
+}
+
 window.addEventListener("message", (event) => {
     const iframe = document.getElementById("unity-iframe");
     if (!iframe || event.source !== iframe.contentWindow) return;
+
+    if (event.data && event.data.type === "MATHMAZE_IFRAME_PING") {
+        const t = typeof event.data.t === "number" ? event.data.t : Date.now();
+        window.__lastUnityIframePing = t;
+        unityIframeEverPinged = true;
+        if (!Array.isArray(window.__unityIframePingTimes)) window.__unityIframePingTimes = [];
+        window.__unityIframePingTimes.push(t);
+        const now = Date.now();
+        window.__unityIframePingTimes = window.__unityIframePingTimes.filter((x) => now - x < IFRAME_PING_WINDOW_MS + 1500);
+        return;
+    }
+
+    if (event.data && event.data.type === "MATHMAZE_IFRAME_VISIBILITY") {
+        if (event.data.hidden) {
+            if (isUnityGameVisible() && !tabSwitchForfeitDone) {
+                scheduleTabSwitchPenaltyIframeTrust(
+                    "iframe-" + (event.data.reason || "visibility")
+                );
+            }
+        } else {
+            clearTabSwitchHideTimer();
+        }
+        return;
+    }
 
     const user = getCurrentUser();
 
@@ -65,6 +360,17 @@ window.addEventListener("message", (event) => {
         if (user) {
             const topicName = event.data.topic || "Fractions";
             const levelRequest = event.data.level || 1;
+
+            tabSwitchForfeitDone = false;
+
+            window.__unityPlayContext = {
+                topic: topicName,
+                level: levelRequest,
+                mode: getLaunchGameMode(),
+                at: Date.now()
+            };
+            window.__unityIframePingTimes = [];
+            iframePingRateFailStreak = 0;
             
             // Ми прибрали локальний об'єкт selectedBoosters, 
             // бо gameBridge.js сам зчитає стан чекбоксів з DOM.
@@ -138,6 +444,10 @@ window.addEventListener("message", (event) => {
 
         if (user) {
             try {
+                clearTabSwitchHideTimer();
+                tabSwitchForfeitDone = true;
+                window.__unityPlayContext = null;
+
                 isProcessingReward = true;
                 setTimeout(() => { isProcessingReward = false; }, 2000);
 
@@ -158,6 +468,16 @@ window.addEventListener("message", (event) => {
 });
 
 function closeUnityGameUI() {
+    clearTabSwitchHideTimer();
+    stopUnityTabVisibilityPoll();
+    stopUnityMobileFocusWatch();
+    stopUnityRafWatch();
+    stopUnityIframeHeartbeatWatch();
+    unityIframeEverPinged = false;
+    window.__unityIframePingTimes = [];
+    window.__unityPlayContext = null;
+    tabSwitchForfeitDone = false;
+
     const unityContainer = document.getElementById("unity-container");
     const closeBtn = document.getElementById("btn-force-close-unity");
     const iframe = document.getElementById("unity-iframe");
@@ -283,6 +603,13 @@ export function setupUnityUI() {
                     unityContainer.parentNode.insertBefore(closeBtn, unityContainer);
                 }
 
+                tabSwitchForfeitDone = false;
+                window.__unityPlayContext = null;
+                startUnityTabVisibilityPoll();
+                startUnityMobileFocusWatch();
+                startUnityRafWatch();
+                startUnityIframeHeartbeatWatch();
+
                 const frame = document.getElementById("unity-iframe");
                 frame.src = `unity/index.html?v=${Date.now()}`;
             };
@@ -316,6 +643,11 @@ async function saveGameResult(resultData, user) {
             shieldUsed: isShieldActive,
             gameMode: mode
         };
+        if (resultData.tabSwitchForfeit) {
+            cleanedData.grade = 2;
+            cleanedData.mistakes = resultData.mistakes || 99;
+            cleanedData.win = false;
+        }
 
         // 1. Оновлюємо золото в Firebase
         await updateDoc(userRef, { 
@@ -530,6 +862,7 @@ export async function initStudentPanel() {
     renderLeaderboard(user);
     setupAvatarSystem(user);
     setupUnityUI();
+    installTabSwitchAntiCheatOnce();
 }
 
 

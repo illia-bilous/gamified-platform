@@ -11,10 +11,9 @@
         margin: 0;
         width: 100%;
         height: 100%;
-        overflow: hidden; /* remove inner iframe scrollbars */
+        overflow: hidden;
         background: #231f20;
       }
-      /* Show fullscreen button over the canvas (not in clipped footer) */
       #unity-footer {
         position: absolute;
         top: 8px;
@@ -56,9 +55,34 @@
     </div>
     <script>
       var canvas = document.querySelector("#unity-canvas");
+
       window.IsMobileViewport = function () {
         return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 1 : 0;
       };
+
+      (function () {
+        function toParent(msg) {
+          try {
+            window.parent.postMessage(msg, "*");
+          } catch (e) {}
+        }
+        setInterval(function () {
+          toParent({ type: "MATHMAZE_IFRAME_PING", t: Date.now() });
+        }, 350);
+        document.addEventListener("visibilitychange", function () {
+          toParent({ type: "MATHMAZE_IFRAME_VISIBILITY", hidden: !!document.hidden });
+        });
+        window.addEventListener("pagehide", function () {
+          toParent({ type: "MATHMAZE_IFRAME_VISIBILITY", hidden: true, reason: "pagehide" });
+        });
+        window.addEventListener("blur", function () {
+          setTimeout(function () {
+            var away = document.hidden;
+            if (typeof document.hasFocus === "function") away = away || !document.hasFocus();
+            if (away) toParent({ type: "MATHMAZE_IFRAME_VISIBILITY", hidden: true, reason: "blur" });
+          }, 100);
+        });
+      })();
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
