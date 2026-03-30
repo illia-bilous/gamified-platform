@@ -1,6 +1,82 @@
-import { db } from "./firebase.js"; 
+import { db } from "./firebase.js";
 import { doc, getDoc, updateDoc, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-let cachedPayload = null; 
+import { generateTrainingTask, normalizeTopicKey } from "./mathTrainingGenerator.js";
+
+let cachedPayload = null;
+
+/** Київська календарна дата YYYY-MM-DD */
+export function getKyivYMD() {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Kyiv" });
+}
+
+/** Наступна календарна дата після поточного дня за Києвом (YYYY-MM-DD) */
+export function nextCalendarDayAfterKyivToday() {
+    const ymd = getKyivYMD();
+    const [y, m, d] = ymd.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    const y2 = dt.getUTCFullYear();
+    const m2 = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d2 = String(dt.getUTCDate()).padStart(2, "0");
+    return `${y2}-${m2}-${d2}`;
+}
+
+/** Ключ progress.* у Firestore: збіг за сирим ім'ям з Unity або за канонічним (Quadratics тощо) */
+function progressTopicKey(userData, topicRaw) {
+    const progress = userData?.progress || {};
+    const keys = Object.keys(progress);
+    const raw = String(topicRaw || "").trim();
+    const canon = normalizeTopicKey(topicRaw);
+    const byRaw = keys.find((k) => k.toLowerCase() === raw.toLowerCase());
+    if (byRaw) return byRaw;
+    const byCanon = keys.find((k) => k.toLowerCase() === canon.toLowerCase());
+    if (byCanon) return byCanon;
+    return canon;
+}
+
+/** Чи тема в «Забігу» ще під добовим локом після програшу */
+export function isExamTopicLockedByDate(userData, topic) {
+    if (!userData?.progress) return false;
+    const key = progressTopicKey(userData, topic);
+    const unlock = userData.progress[key]?.examUnlockDay;
+    if (!unlock || typeof unlock !== "string") return false;
+    return getKyivYMD() < unlock;
+}
+
+/** Режим з батьківської сторінки: "training" | "exam" */
+function getLaunchGameMode() {
+    const m = String(window.__mathMazeGameMode || "").toLowerCase().trim();
+    return m === "training" ? "training" : "exam";
+}
+
+const TRAINING_TIME_MULT = 1.65;
+const TRAINING_REWARD_MULT = 0.35;
+const EXAM_TIME_MULT = 0.82;
+const EXAM_REWARD_MULT = 1.55;
+
+/**
+ * Повернення в Unity → Menu_Levels при добовому локі теми.
+ * Синхронний alert блокує WebGL — SendMessage часто не виконується до закриття діалогу.
+ * Тому: кілька спроб + postMessage у вікно iframe (див. www/unity/index.html).
+ */
+function requestUnityReturnToLevelMenu() {
+    const iframe = document.getElementById("unity-iframe");
+    if (!iframe?.contentWindow) return;
+    const cw = iframe.contentWindow;
+    const kick = () => {
+        try {
+            cw.postMessage({ type: "MATHMAZE_FORCE_LEVEL_MENU" }, "*");
+        } catch (e) {}
+        const u = cw.unityInstance;
+        if (u && typeof u.SendMessage === "function") {
+            try {
+                u.SendMessage("GameManager", "ReturnToLevelMenuFromWebLock", "");
+            } catch (e) {}
+        }
+    };
+    kick();
+    [50, 120, 250, 500, 1000, 1800].forEach((ms) => setTimeout(kick, ms));
+}
 
 // Допоміжна функція для пошуку теми без урахування регістру (Fractions == fractions)
 function findTopicCaseInsensitive(data, topic) {
@@ -37,18 +113,20 @@ function getLevelFromTopicData(topicData, level) {
     return null;
 }
 
-export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) {
-    console.log(`🚀 GameBridge: Старт... Topic="${topic}", Teacher="${teacherId}", Level=${level}`);
+export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, mode = null) {
+    const gameMode =
+        mode === "training" ? "training" : mode === "exam" ? "exam" : getLaunchGameMode();
+    console.log(`🚀 GameBridge: Старт... Topic="${topic}", Teacher="${teacherId}", Level=${level}, mode=${gameMode}`);
 
-    // --- НОВА ПЕРЕВІРКА ПРОГРЕСУ (ЗАХИСТ) ---
-    if (studentId) {
+    // --- ПЕРЕВІРКА ПРОГРЕСУ (лише режим «Забіг») — у тренажері всі 4 рівні доступні з боку конфігу ---
+    if (gameMode !== "training" && studentId) {
         try {
             const userRef = doc(db, "users", studentId);
             const userSnap = await getDoc(userRef);
             if (userSnap.exists()) {
                 const userData = userSnap.data();
-                // Отримуємо максимально дозволений рівень для цієї теми (дефолт 1)
-                const maxAllowed = userData.progress?.[topic]?.maxAllowedLevel || 1;
+                const pKey = progressTopicKey(userData, topic);
+                const maxAllowed = userData.progress?.[pKey]?.maxAllowedLevel || 1;
                 
                 if (level > maxAllowed) {
                     console.error(`🚫 Спроба доступу до заблокованого рівня! Запитувано: ${level}, Дозволено: ${maxAllowed}`);
@@ -67,6 +145,25 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
         return;
     }
 
+    if (gameMode !== "training" && studentId) {
+        try {
+            const userRef = doc(db, "users", studentId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists() && isExamTopicLockedByDate(userSnap.data(), topic)) {
+                console.warn(`🚫 Забіг: тема «${topic}» тимчасово заблокована після програшу.`);
+                requestUnityReturnToLevelMenu();
+                setTimeout(() => {
+                    alert(
+                        `Тема ${topic} заблокована, потренуйтесь в тренажері, або пройдіть іншу тему`
+                    );
+                }, 400);
+                return;
+            }
+        } catch (e) {
+            console.error("exam lock check:", e);
+        }
+    }
+
     let finalConfig = {
         question: `Рівень ${level}: 2 + 2 = ?`, 
         answer: "4",
@@ -75,7 +172,8 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
         reward: 10,
         hasShield: false,
         hasRadar: false,
-        hasExtraTime: false
+        hasExtraTime: false,
+        gameMode
     };
 
     // ==========================================
@@ -126,26 +224,32 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
 
     let foundTask = null;
     try {
-        // --- 1. ПЕРЕВІРКА ВЧИТЕЛЯ ---
-        if (teacherId) {
-            const teacherRef = doc(db, "teacher_configs", teacherId);
-            const teacherSnap = await getDoc(teacherRef);
-            if (teacherSnap.exists()) {
-                const topicData = findTopicCaseInsensitive(teacherSnap.data(), topic);
-                if (topicData) {
-                    foundTask = getLevelFromTopicData(topicData, level);
+        if (gameMode === "training") {
+            foundTask = generateTrainingTask(normalizeTopicKey(topic), level);
+        } else {
+            // Забіг: конфіг за ключами Fractions / Powers / Quadratics (Unity може слати «Рівняння»)
+            const topicForConfig = normalizeTopicKey(topic);
+            if (teacherId) {
+                const teacherRef = doc(db, "teacher_configs", teacherId);
+                const teacherSnap = await getDoc(teacherRef);
+                if (teacherSnap.exists()) {
+                    let topicData = findTopicCaseInsensitive(teacherSnap.data(), topic);
+                    if (!topicData) topicData = findTopicCaseInsensitive(teacherSnap.data(), topicForConfig);
+                    if (topicData) {
+                        foundTask = getLevelFromTopicData(topicData, level);
+                    }
                 }
             }
-        }
 
-        // --- 2. ГЛОБАЛЬНИЙ КОНФІГ ---
-        if (!foundTask) {
-            const globalRef = doc(db, "global_config", "game_levels");
-            const globalSnap = await getDoc(globalRef);
-            if (globalSnap.exists()) {
-                const topicData = findTopicCaseInsensitive(globalSnap.data(), topic);
-                if (topicData) {
-                    foundTask = getLevelFromTopicData(topicData, level);
+            if (!foundTask) {
+                const globalRef = doc(db, "global_config", "game_levels");
+                const globalSnap = await getDoc(globalRef);
+                if (globalSnap.exists()) {
+                    let topicData = findTopicCaseInsensitive(globalSnap.data(), topic);
+                    if (!topicData) topicData = findTopicCaseInsensitive(globalSnap.data(), topicForConfig);
+                    if (topicData) {
+                        foundTask = getLevelFromTopicData(topicData, level);
+                    }
                 }
             }
         }
@@ -156,21 +260,42 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1) 
             if (Array.isArray(foundTask.wrongAnswers)) {
                 finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
             }
-            
-            finalConfig.time = foundTask.timeLimit ? parseInt(foundTask.timeLimit) : 120;
-            
-            if (foundTask.reward !== undefined) finalConfig.reward = parseInt(foundTask.reward);
-        }
-    } catch (err) { console.error(err); }
+            if (typeof foundTask.explanation === "string") {
+                finalConfig.explanation = foundTask.explanation;
+            }
 
-    // --- 4. ВІДПРАВКА ---
-    const payload = JSON.stringify(finalConfig);
+            finalConfig.time = foundTask.timeLimit ? parseInt(foundTask.timeLimit, 10) : 120;
+
+            if (foundTask.reward !== undefined) finalConfig.reward = parseInt(foundTask.reward, 10);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+
+    if (gameMode === "training") {
+        finalConfig.time = Math.max(45, Math.ceil(finalConfig.time * TRAINING_TIME_MULT));
+        finalConfig.reward = Math.max(1, Math.floor(finalConfig.reward * TRAINING_REWARD_MULT));
+    } else {
+        finalConfig.time = Math.max(25, Math.floor(finalConfig.time * EXAM_TIME_MULT));
+        finalConfig.reward = Math.max(1, Math.ceil(finalConfig.reward * EXAM_REWARD_MULT));
+    }
+    finalConfig.gameMode = gameMode;
+
+    // --- 4. ВІДПРАВКА (без зайвих полів для Unity JsonUtility) ---
+    const { gameMode: _gm, ...unityConfig } = finalConfig;
+    const payload = JSON.stringify(unityConfig);
     cachedPayload = payload;
     const unityGame = iframe.contentWindow.unityInstance;
 
     if (unityGame) {
-        console.log("✅ Відправка до GameManager:", finalConfig);
+        console.log("✅ Відправка до GameManager:", unityConfig, `(mode=${gameMode})`);
         unityGame.SendMessage("GameManager", "AcceptConfig", payload);
+        window.__unityPlayContext = {
+            topic,
+            level,
+            mode: gameMode,
+            at: Date.now()
+        };
     }
 }
 
@@ -194,6 +319,10 @@ window.addEventListener("message", async (event) => {
             const { topic, level, win } = result;
             const studentId = localStorage.getItem("studentUid");
 
+            if (getLaunchGameMode() === "training") {
+                return;
+            }
+
             if (win && studentId) {
                 console.log(`🏆 Рівень ${level} пройдено у темі ${topic}. Оновлюємо базу...`);
                 
@@ -202,14 +331,14 @@ window.addEventListener("message", async (event) => {
 
                 if (userSnap.exists()) {
                     const userData = userSnap.data();
-                    // Поточний прогрес у базі
-                    const currentMax = userData.progress?.[topic]?.maxAllowedLevel || 1;
+                    const pKey = progressTopicKey(userData, topic);
+                    const currentMax = userData.progress?.[pKey]?.maxAllowedLevel || 1;
 
                     // Оновлюємо, тільки якщо пройдений рівень дорівнює поточному максимуму
                     if (level >= currentMax) {
                         const nextLevel = level + 1;
                         await updateDoc(userRef, {
-                            [`progress.${topic}.maxAllowedLevel`]: nextLevel
+                            [`progress.${pKey}.maxAllowedLevel`]: nextLevel
                         });
                         console.log(`✅ Firebase оновлено! Наступний доступний рівень: ${nextLevel}`);
                     }
@@ -221,47 +350,5 @@ window.addEventListener("message", async (event) => {
         return; // Виходимо, бо це повідомлення ми вже обробили
     }
     // ------------------------------------
-
-    if (data.type === "REQUEST_TEACHER_LIMIT") {
-        const topic = data.topic;
-        const studentId = localStorage.getItem("studentUid"); 
-
-        if (!studentId) return;
-
-        try {
-            const userRef = doc(db, "users", studentId);
-            const userSnap = await getDoc(userRef);
-            
-            if (userSnap.exists()) {
-                const userData = userSnap.data();
-                
-                // Отримуємо значення з бази
-                const limitFromDB = userData.progress?.[topic]?.maxAllowedLevel;
-                const isBlocked = userData.progress?.[topic]?.isBlocked ?? false;
-
-                // ЛОГІКА: 
-                // 1. Якщо заблоковано вчителем -> 0 (все закрито)
-                // 2. Якщо ліміту в базі немає (undefined) -> 1 (перший рівень відкритий)
-                // 3. Якщо ліміт є -> використовуємо його (але не менше 1)
-                let finalLimit;
-                    if (isBlocked) {
-                        finalLimit = 1; 
-                        console.log(`🚫 Тема ${topic} заблокована вчителем. Доступний лише 1-й рівень.`);
-                    } else {
-                        finalLimit = limitFromDB || 1; // Якщо не блок, беремо прогрес із бази або 1
-                    }
-
-                const iframe = document.getElementById("unity-iframe");
-                if (iframe && iframe.contentWindow.unityInstance) {
-                    iframe.contentWindow.unityInstance.SendMessage(
-                        "MenuController", 
-                        "SetTeacherLimit", 
-                        finalLimit
-                    );
-                }
-            }
-        } catch (e) {
-            console.error("Помилка відправки ліміту в Unity:", e);
-        }
-    }
+    // REQUEST_TEACHER_LIMIT обробляє лише studentPanel.js (один слухач — без гонки SetTeacherLimit).
 });

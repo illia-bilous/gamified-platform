@@ -4,6 +4,7 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
     signOut,
+    onAuthStateChanged,
     sendEmailVerification // 🔥 Додано для відправки листів
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { 
@@ -13,7 +14,8 @@ import {
     collection, 
     query,
     where,
-    getDocs
+    getDocs,
+    onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const TEACHER_KEY = "1"; // Код адміністратора для реєстрації вчителів
@@ -35,9 +37,59 @@ export function getCurrentUser() {
     } catch (e) { return null; }
 }
 
-export function logoutUser() {
+export async function logoutUser() {
     localStorage.removeItem("currentUser");
-    signOut(auth).then(() => console.log("Out")).catch((e) => console.error(e));
+    localStorage.removeItem("studentUid");
+    try {
+        await signOut(auth);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+let userDocUnsubscribe = null;
+
+function detachUserDocWatch() {
+    if (typeof userDocUnsubscribe === "function") {
+        userDocUnsubscribe();
+        userDocUnsubscribe = null;
+    }
+}
+
+/**
+ * Якщо користувача видалили з Firestore (users/{uid}) або з Authentication —
+ * очищаємо локальну сесію і перезавантажуємо сторінку, щоб скинути підписки в панелях.
+ */
+export function initSessionGuards() {
+    onAuthStateChanged(auth, (firebaseUser) => {
+        detachUserDocWatch();
+
+        if (!firebaseUser) {
+            const hadLocalSession = !!localStorage.getItem("currentUser");
+            localStorage.removeItem("currentUser");
+            localStorage.removeItem("studentUid");
+            if (hadLocalSession) {
+                window.location.reload();
+            }
+            return;
+        }
+
+        const userRef = doc(db, "users", firebaseUser.uid);
+        userDocUnsubscribe = onSnapshot(
+            userRef,
+            (snap) => {
+                if (snap.exists()) return;
+                detachUserDocWatch();
+                localStorage.removeItem("currentUser");
+                localStorage.removeItem("studentUid");
+                alert("Ваш обліковий запис видалено з платформи. Зверніться до вчителя.");
+                signOut(auth).finally(() => window.location.reload());
+            },
+            (err) => {
+                console.error("users/{uid} listener:", err);
+            }
+        );
+    });
 }
 
 function setError(inputEl, message) {

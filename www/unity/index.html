@@ -6,6 +6,22 @@
     <title>Unity Web Player | MathMaze</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+      /* Заповнення iframe на кабінеті учня (TemplateData центрує unity-desktop у маленькому вікні) */
+      html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+      body.mathmaze-embed-iframe #unity-container.unity-desktop {
+        position: fixed;
+        left: 0;
+        top: 0;
+        transform: none;
+        width: 100%;
+        height: 100%;
+      }
+      body.mathmaze-embed-iframe #unity-canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
+    </style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -26,12 +42,23 @@
     <script>
       var canvas = document.querySelector("#unity-canvas");
 
+      var mathMazeInParentFrame = (function () {
+        try {
+          return window.parent && window.self !== window.parent;
+        } catch (e) {
+          return true;
+        }
+      })();
+      if (mathMazeInParentFrame) {
+        document.body.classList.add("mathmaze-embed-iframe");
+      }
+
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
       // If type=='warning', a yellow highlight color is used.
       // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
+      // way that non-critical warnings and error messages are presented to
+      // the user.
       function unityShowBanner(msg, type) {
         var warningBanner = document.querySelector("#unity-warning");
         function updateBannerVisibility() {
@@ -104,11 +131,59 @@
 
       } else {
         // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        if (mathMazeInParentFrame) {
+          canvas.style.width = "100%";
+          canvas.style.height = "100%";
+        } else {
+          canvas.style.width = "960px";
+          canvas.style.height = "600px";
+        }
       }
 
       document.querySelector("#unity-loading-bar").style.display = "block";
+
+      var mathMazeIframePingId = null;
+
+      function mathMazePostToParentVisibility(hidden, reason) {
+        if (!mathMazeInParentFrame) return;
+        try {
+          window.parent.postMessage(
+            { type: "MATHMAZE_IFRAME_VISIBILITY", hidden: !!hidden, reason: reason || "" },
+            "*"
+          );
+        } catch (e) {}
+      }
+
+      function mathMazeStartIframeBridge(unityInstance) {
+        if (!mathMazeInParentFrame) return;
+        window.unityInstance = unityInstance;
+        window.unityGame = unityInstance;
+
+        if (mathMazeIframePingId != null) {
+          clearInterval(mathMazeIframePingId);
+          mathMazeIframePingId = null;
+        }
+        mathMazeIframePingId = setInterval(function () {
+          try {
+            window.parent.postMessage({ type: "MATHMAZE_IFRAME_PING", t: Date.now() }, "*");
+          } catch (e) {}
+        }, 250);
+
+        document.addEventListener("visibilitychange", function () {
+          mathMazePostToParentVisibility(document.hidden, document.visibilityState || "visibilitychange");
+        });
+        window.addEventListener("pagehide", function () {
+          mathMazePostToParentVisibility(true, "pagehide");
+        });
+
+        window.addEventListener("message", function (ev) {
+          if (!ev.data || ev.data.type !== "MATHMAZE_FORCE_LEVEL_MENU") return;
+          if (!unityInstance || typeof unityInstance.SendMessage !== "function") return;
+          try {
+            unityInstance.SendMessage("GameManager", "ReturnToLevelMenuFromWebLock", "");
+          } catch (e) {}
+        });
+      }
 
       var script = document.createElement("script");
       script.src = loaderUrl;
@@ -116,11 +191,12 @@
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
               }).then((unityInstance) => {
-                window.unityInstance = unityInstance;
                 document.querySelector("#unity-loading-bar").style.display = "none";
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };
+
+                mathMazeStartIframeBridge(unityInstance);
 
               }).catch((message) => {
                 alert(message);

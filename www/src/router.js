@@ -1,6 +1,6 @@
 // src/router.js
 import { showScreen } from "./ui.js";
-import { initAuth, getCurrentUser, renderRegisterForm } from "./auth.js";
+import { initAuth, getCurrentUser, renderRegisterForm, initSessionGuards, logoutUser } from "./auth.js";
 // 👇 ДОДАЛИ renderStudentDiary в імпорт
 import { initStudentPanel, renderStudentDiary } from "./studentPanel.js"; 
 import { initTeacherPanel } from "./teacherPanel.js"; 
@@ -21,6 +21,8 @@ let currentRole = null;
 
 function initializeApp() {
     console.log("initializeApp: Start...");
+
+    initSessionGuards();
 
     const handleLoginSuccess = async (role) => {
         if (role === "student") {
@@ -108,9 +110,10 @@ function setupButtonListener(id, handler) {
 }
 
 const logout = () => {
-    localStorage.removeItem("currentUser");
-    location.hash = "";
-    showScreen("screen-home");
+    void logoutUser().then(() => {
+        location.hash = "";
+        showScreen("screen-home");
+    });
 };
 
 function resetForms() {

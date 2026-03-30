@@ -169,9 +169,18 @@
     
                         <div id="boosters-container" style="margin-bottom: 20px; display: flex; justify-content: center; gap: 15px; min-height: 40px;"></div>
 
-                        <button id="btn-start-lesson" class="btn-primary" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
-                            ▶ ПОЧАТИ УРОК
-                        </button>
+                        <p style="color: rgba(255,255,255,0.65); font-size: 0.95em; max-width: 560px; margin: 0 auto 16px; line-height: 1.45;">
+                            <strong>Тренажер</strong> — випадкові завдання з кожної теми (легші на 1-му рівні, складніші на 4-му), скільки завгодно спроб, більше часу, мало золота; прогрес «Забігу» не змінюється.<br>
+                            <strong>Забіг</strong> — завдання з кабінету вчителя (або загальний іспитовий набір): один програш у темі блокує її в цьому режимі до наступного календарного дня; більше золота, менше часу.
+                        </p>
+                        <div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; align-items: center;">
+                            <button type="button" class="btn-primary btn-start-game-mode" data-game-mode="training" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
+                                ▶ Тренажер
+                            </button>
+                            <button type="button" class="btn-primary btn-start-game-mode" data-game-mode="exam" style="padding: 20px 60px; font-size: 1.5em; border-radius: 50px; box-shadow: 0 10px 30px rgba(108, 92, 231, 0.5); transition: transform 0.2s;">
+                                ▶ Забіг
+                            </button>
+                        </div>
                         
                         <div id="unity-container" class="hidden">
                             <iframe id="unity-iframe" 
@@ -179,6 +188,7 @@
                                     allowfullscreen="true"
                                     webkitallowfullscreen="true"
                                     mozallowfullscreen="true"
+                                    scrolling="no"
                                     style="width: 960px; height: 600px; border: none; margin-top: 20px; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
                             </iframe>
                         </div>
