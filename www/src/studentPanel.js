@@ -59,7 +59,10 @@ let lastUnityRafTs = 0;
 let unityIframeHeartbeatId = null;
 let unityIframeEverPinged = false;
 let iframePingRateFailStreak = 0;
-const TAB_SWITCH_HIDE_MS = 550;
+let lastLockedTopicAlertKey = "";
+// Для «Забігу»: 1–2с шанс повернутись назад; для «Тренажера» — майже одразу.
+const EXAM_TAB_SWITCH_HIDE_MS = 1500;
+const TRAINING_TAB_SWITCH_HIDE_MS = 1500;
 /**
  * У фоні Chrome часто НЕ зупиняє setInterval, а зріджує (~1 раз/с).
  * Тоді «немає ping 3 с» ніколи не спрацьовує. Рахуємо щільність ping за вікно.
@@ -70,7 +73,8 @@ const IFRAME_PING_CHECK_MS = 500;
 const IFRAME_PING_RATE_FAILS_NEEDED = 2;
 const IFRAME_PING_CTX_GRACE_MS = 9000;
 /** На багатьох телефонах document.hidden лишається false у фоні — ловимо втрату фокусу документа */
-const MOBILE_FOCUS_LOST_MS = 700;
+const MOBILE_FOCUS_EXAM_LOST_MS = 1500;
+const MOBILE_FOCUS_TRAINING_LOST_MS = 1500;
 /** Якщо між кадрами > цього значення (мс), типово вкладку приглушили / вийшли з браузера */
 const RAF_SUSPEND_MS = 3800;
 const RAF_CTX_MIN_AGE_MS = 6000;
@@ -108,30 +112,57 @@ function pageLostFocusForAntiCheat() {
 
 function shouldForfeitAfterAwayTime() {
     if (isDocumentHiddenForGame()) return true;
-    if (isMobileViewportAntiCheat() && pageLostFocusForAntiCheat()) return true;
+    // На ноутбуці при Alt+Tab/перехід в інше вікно document.hidden може лишитись false,
+    // але фокус сторінки втрачається — це теж вважаємо «вийшов зі вкладки гри».
+    if (pageLostFocusForAntiCheat()) return true;
     return false;
+}
+
+function getTabSwitchHideMsForMode() {
+    const mode = getLaunchGameMode();
+    return mode === "training" ? TRAINING_TAB_SWITCH_HIDE_MS : EXAM_TAB_SWITCH_HIDE_MS;
+}
+
+function getMobileFocusLostMsForMode() {
+    const mode = getLaunchGameMode();
+    return mode === "training" ? MOBILE_FOCUS_TRAINING_LOST_MS : MOBILE_FOCUS_EXAM_LOST_MS;
+}
+
+function showCheatAlert(mode, topic) {
+    const t = String(topic || "").trim();
+    if (mode === "training") {
+        alert("Спроба списати");
+        return;
+    }
+    if (t) {
+        alert(`Спроба списати в темі ${t}`);
+    } else {
+        alert("Спроба списати в темі");
+    }
 }
 
 function scheduleTabSwitchPenalty(reason) {
     if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
     clearTabSwitchHideTimer();
+    const waitMs = getTabSwitchHideMsForMode();
     tabSwitchHideTimer = setTimeout(() => {
         tabSwitchHideTimer = null;
         if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
         if (!shouldForfeitAfterAwayTime()) return;
         tryApplyTabSwitchForfeit(reason);
-    }, TAB_SWITCH_HIDE_MS);
+    }, waitMs);
 }
 
 /** Довіра сигналу з вікна Unity-iframe (на мобільних батьківський document часто «бреше»). */
 function scheduleTabSwitchPenaltyIframeTrust(reason) {
     if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
     clearTabSwitchHideTimer();
+    const waitMs = getTabSwitchHideMsForMode();
     tabSwitchHideTimer = setTimeout(() => {
         tabSwitchHideTimer = null;
         if (!isUnityGameVisible() || tabSwitchForfeitDone || isProcessingReward) return;
         tryApplyTabSwitchForfeit(reason);
-    }, TAB_SWITCH_HIDE_MS);
+    }, waitMs);
 }
 
 function startUnityIframeHeartbeatWatch() {
@@ -203,7 +234,7 @@ function startUnityMobileFocusWatch() {
         }
         const now = Date.now();
         if (mobileFocusLostSince == null) mobileFocusLostSince = now;
-        if (now - mobileFocusLostSince >= MOBILE_FOCUS_LOST_MS) {
+        if (now - mobileFocusLostSince >= getMobileFocusLostMsForMode()) {
             tryApplyTabSwitchForfeit("mobile-focus");
         }
     }, 200);
@@ -270,6 +301,7 @@ function tryApplyTabSwitchForfeit(reason) {
 
     tabSwitchForfeitDone = true;
     window.__unityPlayContext = null;
+    const mode = String(ctx.mode || getLaunchGameMode()).toLowerCase().trim() === "training" ? "training" : "exam";
 
     const resultData = {
         score: 0,
@@ -280,14 +312,17 @@ function tryApplyTabSwitchForfeit(reason) {
         timeSpent: 0,
         win: false,
         shieldUsed: false,
+        gameMode: mode,
         tabSwitchForfeit: true,
         forfeitReason: reason || "visibility"
     };
 
     isProcessingReward = true;
+    // Закриваємо одразу, збереження йде у фоні (Firestore може займати 1–3с).
+    closeUnityGameUI();
+    setTimeout(() => showCheatAlert(mode, ctx.topic), 50);
     void saveGameResult(resultData, user).finally(() => {
         isProcessingReward = false;
-        closeUnityGameUI();
     });
 }
 
@@ -360,13 +395,14 @@ window.addEventListener("message", (event) => {
         if (user) {
             const topicName = event.data.topic || "Fractions";
             const levelRequest = event.data.level || 1;
+            const launchMode = getLaunchGameMode();
 
             tabSwitchForfeitDone = false;
 
             window.__unityPlayContext = {
                 topic: topicName,
                 level: levelRequest,
-                mode: getLaunchGameMode(),
+                mode: launchMode,
                 at: Date.now()
             };
             window.__unityIframePingTimes = [];
@@ -374,9 +410,30 @@ window.addEventListener("message", (event) => {
             
             // Ми прибрали локальний об'єкт selectedBoosters, 
             // бо gameBridge.js сам зчитає стан чекбоксів з DOM.
-            console.log(`🎮 Запит конфігурації: ${topicName}, рівень ${levelRequest}, режим ${getLaunchGameMode()}`);
-            
-            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest, getLaunchGameMode());
+            console.log(`🎮 Запит конфігурації: ${topicName}, рівень ${levelRequest}, режим ${launchMode}`);
+
+            // Резервна перевірка блоку теми в «Забігу» (щоб повідомлення точно з'являлось при повторному вході).
+            if (launchMode === "exam") {
+                void (async () => {
+                    try {
+                        const userRef = doc(db, "users", user.uid);
+                        const userSnap = await getDoc(userRef);
+                        if (userSnap.exists() && isExamTopicLockedByDate(userSnap.data(), topicName)) {
+                            closeUnityGameUI();
+                            setTimeout(() => {
+                                alert(`Тема ${topicName} заблокована, потренуйтесь в тренажері, або пройдіть іншу тему`);
+                            }, 80);
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("exam lock precheck:", e);
+                    }
+                    sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest, launchMode);
+                })();
+                return;
+            }
+
+            sendConfigToUnity(topicName, user.teacherUid, user.uid, levelRequest, launchMode);
         }
     }
 
@@ -399,7 +456,16 @@ window.addEventListener("message", (event) => {
                 const data = docSnap.data();
                 if (isExamTopicLockedByDate(data, requestedTopic)) {
                     limitVal = 0;
+                    // Якщо тема вже під добовим блоком, показуємо повідомлення кожного разу при вході в тему.
+                    const alertKey = `${uid}:${requestedTopic}:${getLaunchGameMode()}`;
+                    if (lastLockedTopicAlertKey !== alertKey) {
+                        lastLockedTopicAlertKey = alertKey;
+                        setTimeout(() => {
+                            alert(`Тема ${requestedTopic} заблокована, потренуйтесь в тренажері, або пройдіть іншу тему`);
+                        }, 80);
+                    }
                 } else {
+                    lastLockedTopicAlertKey = "";
                     const tKey = resolveTopicKeyForProgress(data, requestedTopic);
                     if (data.progress && data.progress[tKey]) {
                         limitVal = data.progress[tKey].maxAllowedLevel || 1;
@@ -444,6 +510,7 @@ window.addEventListener("message", (event) => {
 
         if (user) {
             try {
+                const ctxAtFinish = window.__unityPlayContext;
                 clearTabSwitchHideTimer();
                 tabSwitchForfeitDone = true;
                 window.__unityPlayContext = null;
@@ -453,7 +520,18 @@ window.addEventListener("message", (event) => {
 
                 const jsonPart = event.data.split("|")[1];
                 const resultData = JSON.parse(jsonPart);
-                saveGameResult(resultData, user);
+                if (!resultData.gameMode) {
+                    const modeFromCtx = String(ctxAtFinish?.mode || "").toLowerCase().trim();
+                    resultData.gameMode = modeFromCtx === "training" ? "training" : getLaunchGameMode();
+                }
+                // Unity теж може форсити програш при виході у фон — тоді треба закрити iframe одразу,
+                // інакше лишається «порожній» рівень (таймер стоїть).
+                if (resultData && resultData.tabSwitchForfeit) {
+                    const cheatMode = String(resultData.gameMode).toLowerCase().trim() === "training" ? "training" : "exam";
+                    closeUnityGameUI();
+                    setTimeout(() => showCheatAlert(cheatMode, resultData.topic), 50);
+                }
+                void saveGameResult(resultData, user);
             } catch (e) { 
                 console.error("JSON Error:", e); 
                 isProcessingReward = false;
@@ -492,7 +570,6 @@ function closeUnityGameUI() {
         if (exitFs) exitFs.call(document);
     }
     if (iframe) iframe.src = "about:blank"; 
-    window.__mathMazeGameMode = "exam";
 
     window.dispatchEvent(new Event('resize'));
 }
@@ -622,7 +699,8 @@ export function setupUnityUI() {
 // ==========================================
 async function saveGameResult(resultData, user) {
     try {
-        const mode = getLaunchGameMode();
+        const rawMode = String(resultData?.gameMode || getLaunchGameMode()).toLowerCase().trim();
+        const mode = rawMode === "training" ? "training" : "exam";
         const score = Number(resultData.score || 0);
         const userRef = doc(db, "users", user.uid); 
         const topic = resultData.topic || "Fractions"; 
@@ -670,13 +748,6 @@ async function saveGameResult(resultData, user) {
                 [`progress.${topicKey}.examUnlockDay`]: unlockDay
             });
             console.log(`🚫 Забіг: програш — тема «${topicKey}» недоступна в іспиті до ${unlockDay}.`);
-            if (resultData.tabSwitchForfeit) {
-                setTimeout(() => {
-                    alert(
-                        "Цю тему в режимі «Забіг» тимчасово заблоковано до завтра (після невдалої спроби). Скористайся тренажером або зайди завтра."
-                    );
-                }, 300);
-            }
         }
 
         // 2. Режим «Забіг»: розблоковуємо наступний рівень лише якщо це поточний «край» прогресу (не знижуємо max при повторі старого рівня)

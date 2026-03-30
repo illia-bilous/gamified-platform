@@ -154,7 +154,7 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
                 requestUnityReturnToLevelMenu();
                 setTimeout(() => {
                     alert(
-                        "Цю тему в режимі «Забіг» тимчасово заблоковано до завтра (після невдалої спроби). Скористайся тренажером або зайди завтра."
+                        `Тема ${topic} заблокована, потренуйтесь в тренажері, або пройдіть іншу тему`
                     );
                 }, 400);
                 return;
