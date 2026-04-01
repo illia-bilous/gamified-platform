@@ -7,8 +7,13 @@
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
     <style>
-      /* Заповнення iframe на кабінеті учня */
-      html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #231f20;
+      }
       body.mathmaze-embed-iframe #unity-container.unity-desktop {
         position: fixed;
         left: 0;
@@ -20,6 +25,27 @@
       body.mathmaze-embed-iframe #unity-canvas {
         width: 100% !important;
         height: 100% !important;
+      }
+      #unity-footer {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 5;
+      }
+      #unity-logo-title-footer,
+      #unity-build-title {
+        display: none !important;
+      }
+      #unity-fullscreen-button {
+        width: 42px !important;
+        height: 42px !important;
+        background-size: 28px 28px !important;
+        border-radius: 8px;
+        background-color: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .unity-mobile #unity-footer {
+        display: block !important;
       }
     </style>
   </head>
@@ -107,6 +133,37 @@
       document.querySelector("#unity-loading-bar").style.display = "block";
 
       var mathMazeIframePingId = null;
+      var mathMazeUnityInstance = null;
+
+      function mathMazeIsFullscreen() {
+        return !!(
+          document.fullscreenElement ||
+          document.webkitFullscreenElement ||
+          document.msFullscreenElement
+        );
+      }
+
+      function mathMazeToggleFullscreen() {
+        var containerEl = document.querySelector("#unity-container");
+        if (mathMazeIsFullscreen()) {
+          var exitFs =
+            document.exitFullscreen ||
+            document.webkitExitFullscreen ||
+            document.msExitFullscreen;
+          if (exitFs) exitFs.call(document);
+        } else {
+          var reqFs =
+            containerEl?.requestFullscreen ||
+            containerEl?.webkitRequestFullscreen ||
+            containerEl?.msRequestFullscreen;
+          if (reqFs) {
+            reqFs.call(containerEl);
+          } else if (mathMazeUnityInstance) {
+            // Fallback for older environments
+            mathMazeUnityInstance.SetFullscreen(1);
+          }
+        }
+      }
 
       function mathMazePostToParentVisibility(hidden, reason) {
         if (!mathMazeInParentFrame) return;
@@ -156,9 +213,10 @@
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
         })
           .then((unityInstance) => {
+            mathMazeUnityInstance = unityInstance;
             document.querySelector("#unity-loading-bar").style.display = "none";
             document.querySelector("#unity-fullscreen-button").onclick = () => {
-              unityInstance.SetFullscreen(1);
+              mathMazeToggleFullscreen();
             };
             mathMazeStartIframeBridge(unityInstance);
           })
