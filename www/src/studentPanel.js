@@ -508,6 +508,19 @@ window.addEventListener("message", (event) => {
                     [`progress.${topicKey}.examUnlockDay`]: unlockDay
                 });
                 console.log(`🚫 Забіг: тему «${topicKey}» заблоковано до ${unlockDay}`);
+
+                // Додатково: логування програшу в журнал / щоденник
+                const lossResult = {
+                    topic: topicRaw,
+                    level: payload.level || 1,
+                    timeSpent: payload.timeSpent || 0,
+                    mistakes: payload.mistakes || 0,
+                    grade: payload.grade || 2,
+                    score: payload.score || 0,
+                    win: false,
+                    gameMode: "exam"
+                };
+                void saveGameResult(lossResult, user);
             } catch (e) {
                 console.error("EXAM_LEVEL_FAILED:", e);
             }
