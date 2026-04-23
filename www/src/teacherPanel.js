@@ -393,17 +393,23 @@ async function renderStudentProfile(student) {
 
     try {
     const userRef = doc(db, "users", student.uid);
-    const updatePath = `progress.${topicID}.maxAllowedLevel`;
-    
-    await updateDoc(userRef, { 
-        [updatePath]: 1,
-        [`progress.${topicID}.isBlocked`]: false 
+    const freshSnap = await getDoc(userRef);
+    const freshData = freshSnap.exists() ? freshSnap.data() : {};
+    const progressKeys = Object.keys(freshData?.progress || {});
+    const resolvedTopicKey =
+        progressKeys.find((k) => k.toLowerCase() === String(topicID).toLowerCase()) || topicID;
+
+    await updateDoc(userRef, {
+        [`progress.${resolvedTopicKey}.maxAllowedLevel`]: 1,
+        [`progress.${resolvedTopicKey}.maxAllowLevel`]: 1,
+        [`progress.${resolvedTopicKey}.isBlocked`]: false
     });
 
     // 🔥 ВАЖЛИВО: Оновлюємо дані в об'єкті student, щоб інтерфейс і Unity бачили зміни
     if (!student.progress) student.progress = {};
-    if (!student.progress[topicID]) student.progress[topicID] = {};
-    student.progress[topicID].maxAllowedLevel = 1;
+    if (!student.progress[resolvedTopicKey]) student.progress[resolvedTopicKey] = {};
+    student.progress[resolvedTopicKey].maxAllowedLevel = 1;
+    student.progress[resolvedTopicKey].maxAllowLevel = 1;
 
     alert(`✅ Тему ${topicName} скинуто до 1 рівня!`);
     renderStudentProfile(student); // Перемальовуємо профіль
@@ -441,14 +447,27 @@ async function resetGameLevels(studentId, studentName) {
 
     try {
         const userRef = doc(db, "users", studentId);
-        
-        // Шляхи мають точно збігатися з тими, що використовує Unity
-        const resetData = {
-            "progress.Fractions.maxAllowedLevel": 1,
-            "progress.Powers.maxAllowedLevel": 1,
-            "progress.Quadratics.maxAllowedLevel": 1,
-            "progress.allTopicsBlocked": false
-        };
+
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        const progress = userData?.progress || {};
+
+        // Оновлюємо як канонічні ключі, так і фактичні ключі з профілю учня
+        // (важливо для сумісності зі старими/кастомними назвами тем).
+        const topicKeys = new Set(["Fractions", "Powers", "Quadratics"]);
+        Object.keys(progress).forEach((key) => {
+            if (key !== "allTopicsBlocked" && typeof progress[key] === "object") {
+                topicKeys.add(key);
+            }
+        });
+
+        const resetData = { "progress.allTopicsBlocked": false };
+        topicKeys.forEach((key) => {
+            resetData[`progress.${key}.maxAllowedLevel`] = 1;
+            // Сумісність з інстансами, де поле могло бути записане без "ed"
+            resetData[`progress.${key}.maxAllowLevel`] = 1;
+            resetData[`progress.${key}.isBlocked`] = false;
+        });
 
         await updateDoc(userRef, resetData);
 

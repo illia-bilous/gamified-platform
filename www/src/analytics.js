@@ -3,6 +3,11 @@ import { collection, query, where, getDocs, orderBy } from "https://www.gstatic.
 import { getCurrentUser } from "./auth.js";
 
 let cachedStudents = [];
+const ANALYTICS_MODES = {
+    all: "Усі спроби",
+    training: "Тренування",
+    exam: "Забіг"
+};
 
 function normalizeClass(str) {
     if (!str) return "БЕЗ КЛАСУ";
@@ -15,6 +20,45 @@ function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}хв ${s}с`;
+}
+
+function normalizeGameMode(mode) {
+    return String(mode || "").toLowerCase().trim() === "training" ? "training" : "exam";
+}
+
+function gradeColor(grade) {
+    if (grade >= 10) return "#2ecc71";
+    if (grade >= 7) return "#f1c40f";
+    return "#e74c3c";
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function formatSessionDate(ts) {
+    if (!ts) return "-";
+    if (ts?.toDate) return ts.toDate().toLocaleString("uk-UA");
+    if (ts?.seconds) return new Date(ts.seconds * 1000).toLocaleString("uk-UA");
+    return "-";
+}
+
+function formatMistakesDisplay(session) {
+    if (session?.tabSwitchForfeit) return "Намагався списати";
+
+    // Підтримка старих записів до додавання tabSwitchForfeit:
+    // античит історично зберігався як grade=2, score=0, mistakes=99.
+    const mistakes = Number(session?.mistakes ?? 0);
+    const grade = Number(session?.grade ?? 0);
+    const score = Number(session?.score ?? 0);
+    if (mistakes >= 99 && grade <= 2 && score <= 0) return "Намагався списати";
+
+    return String(session?.mistakes ?? 0);
 }
 
 export async function loadTeacherAnalytics() {
@@ -87,6 +131,20 @@ function renderTable(selectedCleanClass) {
     const tbody = document.getElementById("analytics-tbody");
     tbody.innerHTML = "";
 
+    const analyticsTable = tbody.closest("table");
+    if (analyticsTable) {
+        analyticsTable.style.width = "100%";
+        analyticsTable.style.minWidth = "1320px";
+        analyticsTable.style.tableLayout = "auto";
+    }
+    const tableWrapper = analyticsTable?.parentElement;
+    if (tableWrapper) {
+        tableWrapper.style.width = "98%";
+        tableWrapper.style.maxWidth = "1360px";
+        tableWrapper.style.margin = "0 auto";
+        tableWrapper.style.overflowX = "auto";
+    }
+
     const filteredStudents = cachedStudents.filter(s => s._cleanClass === selectedCleanClass);
 
     if (filteredStudents.length === 0) {
@@ -120,7 +178,7 @@ function renderTable(selectedCleanClass) {
             </tr>
             <tr id="details-${user.targetUid}" class="details-row" style="display: none;">
                 <td colspan="5" style="background: rgba(0,0,0,0.2); padding: 0;">
-                    <div id="history-container-${user.targetUid}" style="padding: 20px;"></div>
+                    <div id="history-container-${user.targetUid}" style="padding: 20px; width: 100%; max-width: 1320px; margin: 0 auto;"></div>
                 </td>
             </tr>
         `;
@@ -163,38 +221,173 @@ window.toggleJournal = async function(targetUid) {
                 return;
             }
 
-            let html = `
-            <table class="journal-table" style="width:100%; font-size:0.9em; background: rgba(0,0,0,0.3); color: #ccc; border-collapse: collapse;">
-                <thead>
-                    <tr style="border-bottom: 2px solid #444; color: #f1c40f;">
-                        <th style="padding: 10px;">Дата</th>
-                        <th>Тема</th>
-                        <th style="text-align:center;">Рівень</th>
-                        <th style="text-align:center;">Оцінка</th>
-                        <th style="text-align:center;">Золото</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-            
-            snapshot.forEach(docSnap => {
-                const r = docSnap.data();
-                let dateStr = r.timestamp ? new Date(r.timestamp.seconds * 1000).toLocaleString('uk-UA') : "-";
-                
-                // Колір оцінки
-                let gradeColor = r.grade >= 10 ? "#2ecc71" : (r.grade >= 7 ? "#f1c40f" : "#e74c3c");
+            const sessions = snapshot.docs.map((docSnap) => ({
+                id: docSnap.id,
+                ...docSnap.data()
+            }));
 
-                html += `
-                <tr style="border-bottom: 1px solid #444;">
-                    <td style="padding: 8px;">${dateStr}</td>
-                    <td>${r.topic || "Unknown"}</td>
-                    <td style="text-align: center;">${r.level || 1}</td>
-                    <td style="text-align: center; color:${gradeColor}; font-weight:bold;">${r.grade || 0}</td>
-                    <td style="text-align: center; color:#f1c40f;">+${r.score || 0}</td>
-                </tr>`;
-            });
-            
-            html += "</tbody></table>";
-            container.innerHTML = html;
+            let activeMode = "all";
+            let selectedSessionId = null;
+
+            const render = () => {
+                const filtered = activeMode === "all"
+                    ? sessions
+                    : sessions.filter((s) => normalizeGameMode(s.gameMode) === activeMode);
+
+                if (selectedSessionId && !filtered.some((s) => s.id === selectedSessionId)) {
+                    selectedSessionId = null;
+                }
+
+                const modeButtonsHtml = Object.entries(ANALYTICS_MODES).map(([modeKey, modeLabel]) => {
+                    const isActive = modeKey === activeMode;
+                    return `
+                        <button class="analytics-mode-btn"
+                                data-mode="${modeKey}"
+                                style="padding:6px 12px; border-radius:8px; border:1px solid ${isActive ? "#1abc9c" : "#555"}; background:${isActive ? "rgba(26,188,156,0.2)" : "#2a2a2a"}; color:${isActive ? "#d7fff7" : "#ddd"}; cursor:pointer; font-weight:700;">
+                            ${modeLabel}
+                        </button>
+                    `;
+                }).join("");
+
+                if (filtered.length === 0) {
+                    container.innerHTML = `
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">${modeButtonsHtml}</div>
+                        <p style="color:#aaa; text-align:center; padding:14px;">Немає записів для "${ANALYTICS_MODES[activeMode]}".</p>
+                    `;
+                    bindModeButtons();
+                    return;
+                }
+
+                const chartData = [...filtered].reverse();
+                const width = 1180;
+                const height = 360;
+                const pad = 34;
+                const innerW = width - pad * 2;
+                const innerH = height - pad * 2;
+                const minGrade = 0;
+                const maxGrade = 12;
+                const stepX = chartData.length > 1 ? innerW / (chartData.length - 1) : 0;
+
+                const path = chartData.map((session, idx) => {
+                    const g = Math.max(minGrade, Math.min(maxGrade, Number(session.grade || 0)));
+                    const x = pad + idx * stepX;
+                    const y = pad + innerH - ((g - minGrade) / (maxGrade - minGrade)) * innerH;
+                    return `${idx === 0 ? "M" : "L"}${x},${y}`;
+                }).join(" ");
+
+                const circles = chartData.map((session, idx) => {
+                    const g = Math.max(minGrade, Math.min(maxGrade, Number(session.grade || 0)));
+                    const x = pad + idx * stepX;
+                    const y = pad + innerH - ((g - minGrade) / (maxGrade - minGrade)) * innerH;
+                    const c = gradeColor(g);
+                    const isSelected = selectedSessionId === session.id;
+                    return `
+                        <circle data-session-id="${session.id}" cx="${x}" cy="${y}" r="${isSelected ? 7 : 5}"
+                                fill="${c}" stroke="${isSelected ? "#fff" : "#0f1720"}"
+                                stroke-width="${isSelected ? 2.5 : 1.2}" style="cursor:pointer;" />
+                    `;
+                }).join("");
+
+                const selected = selectedSessionId
+                    ? chartData.find((s) => s.id === selectedSessionId)
+                    : null;
+
+                const tableRows = filtered.map((s) => {
+                    const rowMode = normalizeGameMode(s.gameMode);
+                    const rowGrade = Number(s.grade || 0);
+                    const mistakesLabel = formatMistakesDisplay(s);
+                    return `
+                        <tr style="border-bottom:1px solid #3b3b3b;">
+                            <td style="padding:8px; color:#b9c2cc;">${escapeHtml(formatSessionDate(s.timestamp))}</td>
+                            <td style="padding:8px; color:#e7edf4;">${escapeHtml(s.topic || "-")}</td>
+                            <td style="padding:8px; text-align:center; color:#d9e5f2;">${s.level || 1}</td>
+                            <td style="padding:8px; text-align:center; color:${gradeColor(rowGrade)}; font-weight:700;">${rowGrade}</td>
+                            <td style="padding:8px; text-align:center; color:#f1c40f;">+${s.score || 0}</td>
+                            <td style="padding:8px; text-align:center; color:#ff8f8f;">${escapeHtml(mistakesLabel)}</td>
+                            <td style="padding:8px; text-align:center; color:#9fd1ff;">${formatTime(Number(s.timeSpent || 0))}</td>
+                            <td style="padding:8px; text-align:center; color:#9adcb7;">${ANALYTICS_MODES[rowMode]}</td>
+                        </tr>
+                    `;
+                }).join("");
+
+                container.innerHTML = `
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">${modeButtonsHtml}</div>
+                    <div style="margin-bottom:8px; color:#9aa3ad; font-size:0.85em;">
+                        Показано: <b style="color:#d9fef5;">${ANALYTICS_MODES[activeMode]}</b> • Записів: <b>${chartData.length}</b>
+                    </div>
+                    <div style="overflow-x:auto; border:1px solid #343a40; border-radius:10px; background:#11181f; padding:10px;">
+                        <svg viewBox="0 0 ${width} ${height}" width="100%" height="360" preserveAspectRatio="xMidYMid meet">
+                            <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#566070" />
+                            <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#566070" />
+                            <line x1="${pad}" y1="${pad + innerH / 2}" x2="${width - pad}" y2="${pad + innerH / 2}" stroke="#2f3a4b" stroke-dasharray="4 4" />
+                            <text x="8" y="${pad + 4}" fill="#8f9bad" font-size="11">12</text>
+                            <text x="12" y="${pad + innerH / 2 + 4}" fill="#8f9bad" font-size="11">6</text>
+                            <text x="12" y="${height - pad + 4}" fill="#8f9bad" font-size="11">0</text>
+                            <path d="${path}" fill="none" stroke="#3b82f6" stroke-opacity="0.45" stroke-width="2" />
+                            ${circles}
+                        </svg>
+                    </div>
+                    <div style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid #3a3a3a; border-radius:10px; padding:12px;">
+                        ${selected ? `
+                            <div style="font-weight:700; color:#fff; margin-bottom:8px;">Деталі спроби</div>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px; color:#d0d0d0; font-size:0.92em;">
+                                <div>📅 ${escapeHtml(formatSessionDate(selected.timestamp))}</div>
+                                <div>🏷️ Режим: <b>${ANALYTICS_MODES[normalizeGameMode(selected.gameMode)]}</b></div>
+                                <div>🧩 Тема: <b>${escapeHtml(selected.topic || "-")}</b></div>
+                                <div>🎚️ Рівень: <b>${selected.level || 1}</b></div>
+                                <div>📝 Оцінка: <b style="color:${gradeColor(Number(selected.grade || 0))}">${selected.grade || 0}</b></div>
+                                <div>💰 Золото: <b style="color:#f1c40f;">+${selected.score || 0}</b></div>
+                                <div>⏱️ Час: <b>${formatTime(Number(selected.timeSpent || 0))}</b></div>
+                                <div>❌ Помилки: <b>${escapeHtml(formatMistakesDisplay(selected))}</b></div>
+                            </div>
+                        ` : `
+                            <div style="color:#8d99a8; text-align:center;">Натисніть на точку графіка, щоб побачити деталі спроби.</div>
+                        `}
+                    </div>
+                    <div style="margin-top:12px;">
+                        <div style="color:#c9d4df; font-weight:700; margin-bottom:8px;">Усі оцінки (${ANALYTICS_MODES[activeMode]})</div>
+                        <div style="overflow-x:auto; border:1px solid #3a3a3a; border-radius:10px; background:#151515;">
+                            <table style="width:100%; border-collapse:collapse; font-size:0.88em; min-width:860px;">
+                                <thead>
+                                    <tr style="background:#262626; color:#f1c40f; text-align:left;">
+                                        <th style="padding:9px;">Дата</th>
+                                        <th style="padding:9px;">Тема</th>
+                                        <th style="padding:9px; text-align:center;">Рівень</th>
+                                        <th style="padding:9px; text-align:center;">Оцінка</th>
+                                        <th style="padding:9px; text-align:center;">Золото</th>
+                                        <th style="padding:9px; text-align:center;">Помилки</th>
+                                        <th style="padding:9px; text-align:center;">Час</th>
+                                        <th style="padding:9px; text-align:center;">Режим</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                bindModeButtons();
+                container.querySelectorAll("circle[data-session-id]").forEach((dot) => {
+                    dot.addEventListener("click", () => {
+                        selectedSessionId = dot.getAttribute("data-session-id");
+                        render();
+                    });
+                });
+            };
+
+            const bindModeButtons = () => {
+                container.querySelectorAll(".analytics-mode-btn").forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        activeMode = btn.getAttribute("data-mode");
+                        selectedSessionId = null;
+                        render();
+                    });
+                });
+            };
+
+            render();
 
         } catch(e) {
             console.error("❌ Помилка завантаження журналу:", e);

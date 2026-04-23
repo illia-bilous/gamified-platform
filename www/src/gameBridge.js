@@ -295,14 +295,14 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
     }
     finalConfig.gameMode = gameMode;
 
-    // --- 4. ВІДПРАВКА (без зайвих полів для Unity JsonUtility) ---
-    const { gameMode: _gm, ...unityConfig } = finalConfig;
-    const payload = JSON.stringify(unityConfig);
+    // --- 4. ВІДПРАВКА ---
+    // Передаємо gameMode в Unity, щоб прогрес "пройдено тему" рахувався тільки для режиму "Забіг".
+    const payload = JSON.stringify(finalConfig);
     cachedPayload = payload;
     const unityGame = iframe.contentWindow.unityInstance;
 
     if (unityGame) {
-        console.log("✅ Відправка до GameManager:", unityConfig, `(mode=${gameMode})`);
+        console.log("✅ Відправка до GameManager:", finalConfig, `(mode=${gameMode})`);
         unityGame.SendMessage("GameManager", "AcceptConfig", payload);
         window.__unityPlayContext = {
             topic,
