@@ -168,6 +168,9 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
         question: `Рівень ${level}: 2 + 2 = ?`, 
         answer: "4",
         wrongAnswers: ["5", "3", "1"],
+        questionImageUrl: "",
+        answerImageUrl: "",
+        wrongAnswerImageUrls: [],
         time: 120,
         reward: 10,
         hasShield: false,
@@ -259,6 +262,17 @@ export async function sendConfigToUnity(topic, teacherId, studentId, level = 1, 
             finalConfig.answer = String(foundTask.answer || "0");
             if (Array.isArray(foundTask.wrongAnswers)) {
                 finalConfig.wrongAnswers = foundTask.wrongAnswers.map(String);
+            }
+            if (typeof foundTask.questionImageUrl === "string") {
+                finalConfig.questionImageUrl = foundTask.questionImageUrl;
+            }
+            if (typeof foundTask.answerImageUrl === "string") {
+                finalConfig.answerImageUrl = foundTask.answerImageUrl;
+            }
+            if (Array.isArray(foundTask.wrongAnswerImageUrls)) {
+                finalConfig.wrongAnswerImageUrls = foundTask.wrongAnswerImageUrls
+                    .map((x) => String(x || ""))
+                    .slice(0, 4);
             }
             if (typeof foundTask.explanation === "string") {
                 finalConfig.explanation = foundTask.explanation;

@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Teacher level assets: write/read only by authenticated teachers.
+    match /teacher_level_assets/{teacherUid}/{allPaths=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == teacherUid
+        && exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == "teacher";
+    }
+
+    // Optional: allow authenticated reads for other assets in future.
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}
