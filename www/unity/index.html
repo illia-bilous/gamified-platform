@@ -6,7 +6,7 @@
     <title>Unity Web Player | MathMaze</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
-    <style>
+     <style>
       html, body {
         margin: 0;
         width: 100%;
@@ -58,7 +58,7 @@
           <div id="unity-progress-bar-full"></div>
         </div>
       </div>
-      <div id="unity-warning"></div>
+      <div id="unity-warning"> </div>
       <div id="unity-footer">
         <div id="unity-logo-title-footer"></div>
         <div id="unity-fullscreen-button"></div>
@@ -78,11 +78,11 @@
       if (mathMazeInParentFrame) {
         document.body.classList.add("mathmaze-embed-iframe");
       }
-      
+
       function unityShowBanner(msg, type) {
         var warningBanner = document.querySelector("#unity-warning");
         function updateBannerVisibility() {
-          warningBanner.style.display = warningBanner.children.length ? "block" : "none";
+           warningBanner.style.display = warningBanner.children.length ? "block" : "none";
         }
         var div = document.createElement("div");
         div.innerHTML = msg;
@@ -112,7 +112,7 @@
         showBanner: unityShowBanner
       };
 
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         var meta = document.createElement("meta");
         meta.name = "viewport";
         meta.content =
@@ -120,20 +120,20 @@
         document.getElementsByTagName("head")[0].appendChild(meta);
         document.querySelector("#unity-container").className = "unity-mobile";
         canvas.className = "unity-mobile";
-
+        
       } else {
-        if (mathMazeInParentFrame) {
+      if (mathMazeInParentFrame) {
           canvas.style.width = "100%";
           canvas.style.height = "100%";
         } else {
         canvas.style.width = "960px";
         canvas.style.height = "600px";
-        }
       }
+    }
 
       document.querySelector("#unity-loading-bar").style.display = "block";
 
-      var mathMazeIframePingId = null;
+        var mathMazeIframePingId = null;
       var mathMazeUnityInstance = null;
 
       function mathMazeIsFullscreen() {
@@ -210,21 +210,22 @@
       script.onload = () => {
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-        })
+              })
           .then((unityInstance) => {
             mathMazeUnityInstance = unityInstance;
-            document.querySelector("#unity-loading-bar").style.display = "none";
-            document.querySelector("#unity-fullscreen-button").onclick = () => {
-              mathMazeToggleFullscreen();
-            };
-            mathMazeStartIframeBridge(unityInstance);
+                document.querySelector("#unity-loading-bar").style.display = "none";
+                document.querySelector("#unity-fullscreen-button").onclick = () => {
+                               mathMazeToggleFullscreen();
+                };
+ mathMazeStartIframeBridge(unityInstance);
           })
           .catch((message) => {
-            alert(message);
-          });
-      };
+                alert(message);
+              });
+            };
+
       document.body.appendChild(script);
+
     </script>
   </body>
 </html>
-          

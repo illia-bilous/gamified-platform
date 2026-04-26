@@ -1,6 +1,6 @@
 // src/teacherPanel.js
 
-import { db, storage } from "./firebase.js";
+import { db } from "./firebase.js";
 import { getCurrentUser } from "./auth.js"; 
 // 👇 Всі функції Firestore беремо з одного місця (CDN)
 import { 
@@ -14,13 +14,15 @@ import {
     setDoc,
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import {
-    ref as storageRef,
-    uploadBytes,
-    getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-
 import { getShopItems, saveShopItems } from "./shopData.js"; 
+
+// Cloudinary (unsigned upload) config:
+// 1) Set in code below OR
+// 2) Set from browser console/localStorage:
+// localStorage.setItem("cloudinaryCloudName", "YOUR_CLOUD_NAME")
+// localStorage.setItem("cloudinaryUploadPreset", "YOUR_UNSIGNED_PRESET")
+const CLOUDINARY_CLOUD_NAME = localStorage.getItem("cloudinaryCloudName") || "";
+const CLOUDINARY_UPLOAD_PRESET = localStorage.getItem("cloudinaryUploadPreset") || "";
 
 // ==========================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ ПАНЕЛІ ВЧИТЕЛЯ
@@ -567,7 +569,10 @@ async function renderLevelEditor() {
                 </div>
                 <div style="margin-bottom: 20px; background: #1c2630; padding: 14px; border: 1px solid #34495e; border-radius: 8px;">
                     <label style="color: #85c1e9; font-weight: bold; display:block; margin-bottom:8px;">🖼️ Фото завдання для дверей (необов'язково):</label>
-                    <input type="file" id="edit-question-image" accept="image/*" style="margin-bottom:8px; color:#ddd;">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                        <input type="file" id="edit-question-image" accept="image/*" style="color:#ddd;">
+                        <button type="button" id="btn-clear-question-image" style="padding:6px 10px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer;">🗑️ Очистити фото</button>
+                    </div>
                     <div id="question-image-preview" style="min-height: 24px; color:#9fb3c8; font-size:0.85em;"></div>
                 </div>
                 <div style="margin-bottom: 20px;">
@@ -576,7 +581,10 @@ async function renderLevelEditor() {
                 </div>
                 <div style="margin-bottom: 20px; background: #1f2d1f; padding: 14px; border: 1px solid #2ecc71; border-radius: 8px;">
                     <label style="color: #7dffb0; font-weight:bold; display:block; margin-bottom:8px;">🖼️ Фото правильного ключа (необов'язково):</label>
-                    <input type="file" id="edit-correct-image" accept="image/*" style="margin-bottom:8px; color:#ddd;">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                        <input type="file" id="edit-correct-image" accept="image/*" style="color:#ddd;">
+                        <button type="button" id="btn-clear-correct-image" style="padding:6px 10px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer;">🗑️ Очистити фото</button>
+                    </div>
                     <div id="correct-image-preview" style="min-height: 24px; color:#a8ddb8; font-size:0.85em;"></div>
                 </div>
                 <label style="color: #e74c3c; margin-bottom: 5px; display:block;">❌ Неправильні варіанти (Ключі-пастки):</label>
@@ -590,19 +598,31 @@ async function renderLevelEditor() {
                     <label style="color: #ff9a9a; display:block; margin-bottom:8px;">🖼️ Фото неправильних ключів (1-4, необов'язково):</label>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div>
-                            <input type="file" class="wrong-image-input" data-wrong-index="0" accept="image/*" style="margin-bottom:6px; color:#ddd;">
+                            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                                <input type="file" class="wrong-image-input" data-wrong-index="0" accept="image/*" style="color:#ddd;">
+                                <button type="button" class="btn-clear-wrong-image" data-wrong-index="0" style="padding:5px 8px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer; font-size:0.8em;">Очистити</button>
+                            </div>
                             <div class="wrong-image-preview" data-wrong-index="0" style="min-height: 20px; color:#f6b0b0; font-size:0.8em;"></div>
                         </div>
                         <div>
-                            <input type="file" class="wrong-image-input" data-wrong-index="1" accept="image/*" style="margin-bottom:6px; color:#ddd;">
+                            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                                <input type="file" class="wrong-image-input" data-wrong-index="1" accept="image/*" style="color:#ddd;">
+                                <button type="button" class="btn-clear-wrong-image" data-wrong-index="1" style="padding:5px 8px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer; font-size:0.8em;">Очистити</button>
+                            </div>
                             <div class="wrong-image-preview" data-wrong-index="1" style="min-height: 20px; color:#f6b0b0; font-size:0.8em;"></div>
                         </div>
                         <div>
-                            <input type="file" class="wrong-image-input" data-wrong-index="2" accept="image/*" style="margin-bottom:6px; color:#ddd;">
+                            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                                <input type="file" class="wrong-image-input" data-wrong-index="2" accept="image/*" style="color:#ddd;">
+                                <button type="button" class="btn-clear-wrong-image" data-wrong-index="2" style="padding:5px 8px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer; font-size:0.8em;">Очистити</button>
+                            </div>
                             <div class="wrong-image-preview" data-wrong-index="2" style="min-height: 20px; color:#f6b0b0; font-size:0.8em;"></div>
                         </div>
                         <div>
-                            <input type="file" class="wrong-image-input" data-wrong-index="3" accept="image/*" style="margin-bottom:6px; color:#ddd;">
+                            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                                <input type="file" class="wrong-image-input" data-wrong-index="3" accept="image/*" style="color:#ddd;">
+                                <button type="button" class="btn-clear-wrong-image" data-wrong-index="3" style="padding:5px 8px; background:#7f1d1d; color:#fff; border:1px solid #b91c1c; border-radius:6px; cursor:pointer; font-size:0.8em;">Очистити</button>
+                            </div>
                             <div class="wrong-image-preview" data-wrong-index="3" style="min-height: 20px; color:#f6b0b0; font-size:0.8em;"></div>
                         </div>
                     </div>
@@ -619,7 +639,10 @@ async function renderLevelEditor() {
                         </div>
                     </div>
                 </div>
-                <button id="btn-save-level" class="btn" style="background: #27ae60; width: 100%; font-size: 1.2em; padding: 15px;">💾 ЗБЕРЕГТИ РІВЕНЬ</button>
+                <div style="display:flex; gap:10px; align-items:center; margin-top: 8px;">
+                    <button id="btn-reset-level-form" class="btn" style="background: #7f8c8d; width: 35%; font-size: 1em; padding: 12px;">↩️ СКИНУТИ ЗМІНИ</button>
+                    <button id="btn-save-level" class="btn" style="background: #27ae60; width: 65%; font-size: 1.2em; padding: 15px;">💾 ЗБЕРЕГТИ РІВЕНЬ</button>
+                </div>
                 <p id="level-save-status" style="text-align: center; color: #aaa; margin-top: 10px; min-height: 20px;"></p>
             </div>
         </div>
@@ -645,19 +668,35 @@ function setImagePreview(previewEl, imageUrl, emptyText) {
 
 async function uploadLevelImageFile(userUid, topic, levelNum, roleKey, file) {
     if (!file) return null;
-    const extRaw = (file.name || "").split(".").pop();
-    const ext = String(extRaw || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+        throw new Error("Cloudinary не налаштовано: вкажіть cloud name і unsigned upload preset.");
+    }
+
     const safeTopic = sanitizeTopicKey(topic);
-    const objectPath = `teacher_level_assets/${userUid}/${safeTopic}/level_${levelNum}/${roleKey}_${Date.now()}.${ext}`;
-    const fileRef = storageRef(storage, objectPath);
-    await uploadBytes(fileRef, file);
-    return await getDownloadURL(fileRef);
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/image/upload`;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    form.append("folder", `teacher_level_assets/${userUid}/${safeTopic}/level_${levelNum}`);
+    form.append("public_id", `${roleKey}_${Date.now()}`);
+
+    const resp = await fetch(uploadUrl, {
+        method: "POST",
+        body: form
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Cloudinary upload failed (${resp.status}): ${errText}`);
+    }
+    const data = await resp.json();
+    return data.secure_url || data.url || null;
 }
 
 function setupLevelEditorLogic() {
     const user = getCurrentUser();
     const btnLoad = document.getElementById("btn-load-level");
     const btnSave = document.getElementById("btn-save-level");
+    const btnReset = document.getElementById("btn-reset-level-form");
     const formArea = document.getElementById("level-form-area");
     const statusText = document.getElementById("level-save-status");
     const qInput = document.getElementById("edit-question");
@@ -666,6 +705,9 @@ function setupLevelEditorLogic() {
     const questionImageInput = document.getElementById("edit-question-image");
     const correctImageInput = document.getElementById("edit-correct-image");
     const wrongImageInputs = document.querySelectorAll(".wrong-image-input");
+    const clearQuestionImageBtn = document.getElementById("btn-clear-question-image");
+    const clearCorrectImageBtn = document.getElementById("btn-clear-correct-image");
+    const clearWrongImageBtns = document.querySelectorAll(".btn-clear-wrong-image");
     const questionImagePreview = document.getElementById("question-image-preview");
     const correctImagePreview = document.getElementById("correct-image-preview");
     const wrongImagePreviewEls = document.querySelectorAll(".wrong-image-preview");
@@ -676,6 +718,80 @@ function setupLevelEditorLogic() {
         answerImageUrl: "",
         wrongAnswerImageUrls: ["", "", "", ""]
     };
+
+    function findLevelFromTopicData(topicData, levelNum) {
+        if (!topicData) return null;
+        if (topicData.doors && Array.isArray(topicData.doors)) {
+            const byId = topicData.doors.find((d) => d && Number(d.id) === Number(levelNum));
+            if (byId) return byId;
+            const byIndex = topicData.doors[Number(levelNum) - 1];
+            return byIndex || null;
+        }
+        return topicData[levelNum] || topicData[String(levelNum)] || null;
+    }
+
+    async function loadGlobalTopicData(topic) {
+        const refs = [
+            doc(db, "global_config", "game_levels"),
+            doc(db, "global_configs_game_levels", "game_levels"),
+            doc(db, "global_configs_game_levels", "default")
+        ];
+        for (const ref of refs) {
+            const snap = await getDoc(ref);
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data && data[topic]) return data[topic];
+            }
+        }
+        return null;
+    }
+
+    function applyLevelDataToForm(levelData, statusMessage = "✅ Завантажено!") {
+        if (levelData) {
+            qInput.value = levelData.question || "";
+            cInput.value = levelData.answer || "";
+            wInputs.forEach((inp, i) => {
+                inp.value = (levelData.wrongAnswers && levelData.wrongAnswers[i]) ? levelData.wrongAnswers[i] : "";
+            });
+            imageState.questionImageUrl = levelData.questionImageUrl || "";
+            imageState.answerImageUrl = levelData.answerImageUrl || "";
+            imageState.wrongAnswerImageUrls = Array.isArray(levelData.wrongAnswerImageUrls)
+                ? [...levelData.wrongAnswerImageUrls, "", "", "", ""].slice(0, 4)
+                : ["", "", "", ""];
+
+            setImagePreview(questionImagePreview, imageState.questionImageUrl, "Фото завдання не вибрано");
+            setImagePreview(correctImagePreview, imageState.answerImageUrl, "Фото правильної відповіді не вибрано");
+            wrongImagePreviewEls.forEach((el, idx) => {
+                setImagePreview(el, imageState.wrongAnswerImageUrls[idx] || "", `Фото для ключа-пастки ${idx + 1} не вибрано`);
+            });
+            if (questionImageInput) questionImageInput.value = "";
+            if (correctImageInput) correctImageInput.value = "";
+            wrongImageInputs.forEach((inp) => { inp.value = ""; });
+
+            goldInput.value = levelData.reward || 100;
+            timeInput.value = levelData.timeLimit || 60;
+            statusText.textContent = statusMessage;
+            return;
+        }
+
+        qInput.value = "";
+        cInput.value = "";
+        wInputs.forEach(i => i.value = "");
+        imageState.questionImageUrl = "";
+        imageState.answerImageUrl = "";
+        imageState.wrongAnswerImageUrls = ["", "", "", ""];
+        setImagePreview(questionImagePreview, "", "Фото завдання не вибрано");
+        setImagePreview(correctImagePreview, "", "Фото правильної відповіді не вибрано");
+        wrongImagePreviewEls.forEach((el, idx) => {
+            setImagePreview(el, "", `Фото для ключа-пастки ${idx + 1} не вибрано`);
+        });
+        if (questionImageInput) questionImageInput.value = "";
+        if (correctImageInput) correctImageInput.value = "";
+        wrongImageInputs.forEach((inp) => { inp.value = ""; });
+        goldInput.value = "100";
+        timeInput.value = "60";
+        statusText.textContent = "ℹ️ Новий рівень.";
+    }
 
     setImagePreview(questionImagePreview, "", "Фото завдання не вибрано");
     setImagePreview(correctImagePreview, "", "Фото правильної відповіді не вибрано");
@@ -690,11 +806,27 @@ function setupLevelEditorLogic() {
             setImagePreview(questionImagePreview, URL.createObjectURL(file), "Фото завдання не вибрано");
         });
     }
+    if (clearQuestionImageBtn) {
+        clearQuestionImageBtn.addEventListener("click", () => {
+            imageState.questionImageUrl = "";
+            if (questionImageInput) questionImageInput.value = "";
+            setImagePreview(questionImagePreview, "", "Фото завдання не вибрано");
+            statusText.textContent = "🧹 Фото завдання очищено (натисніть ЗБЕРЕГТИ РІВЕНЬ).";
+        });
+    }
     if (correctImageInput) {
         correctImageInput.addEventListener("change", () => {
             const file = correctImageInput.files && correctImageInput.files[0];
             if (!file) return;
             setImagePreview(correctImagePreview, URL.createObjectURL(file), "Фото правильної відповіді не вибрано");
+        });
+    }
+    if (clearCorrectImageBtn) {
+        clearCorrectImageBtn.addEventListener("click", () => {
+            imageState.answerImageUrl = "";
+            if (correctImageInput) correctImageInput.value = "";
+            setImagePreview(correctImagePreview, "", "Фото правильної відповіді не вибрано");
+            statusText.textContent = "🧹 Фото правильної відповіді очищено (натисніть ЗБЕРЕГТИ РІВЕНЬ).";
         });
     }
     wrongImageInputs.forEach((inp) => {
@@ -707,11 +839,20 @@ function setupLevelEditorLogic() {
             setImagePreview(preview, URL.createObjectURL(file), `Фото для ключа-пастки ${idx + 1} не вибрано`);
         });
     });
+    clearWrongImageBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const idx = parseInt(btn.dataset.wrongIndex || "-1", 10);
+            if (idx < 0 || idx > 3) return;
+            imageState.wrongAnswerImageUrls[idx] = "";
+            const inputEl = document.querySelector(`.wrong-image-input[data-wrong-index="${idx}"]`);
+            if (inputEl) inputEl.value = "";
+            const preview = document.querySelector(`.wrong-image-preview[data-wrong-index="${idx}"]`);
+            setImagePreview(preview, "", `Фото для ключа-пастки ${idx + 1} не вибрано`);
+            statusText.textContent = `🧹 Фото ключа-пастки ${idx + 1} очищено (натисніть ЗБЕРЕГТИ РІВЕНЬ).`;
+        });
+    });
 
-    // ==========================================
-    // 📥 ЗАВАНТАЖЕННЯ (LOAD)
-    // ==========================================
-    btnLoad.onclick = async () => {
+    async function loadSelectedLevelFromTeacherConfig() {
         const topic = document.getElementById("editor-topic").value;
         const levelNum = document.getElementById("editor-level").value;
         statusText.textContent = "⏳ Завантаження...";
@@ -720,61 +861,8 @@ function setupLevelEditorLogic() {
             const docSnap = await getDoc(doc(db, "teacher_configs", user.uid));
             if (docSnap.exists() && docSnap.data()[topic]) {
                 const topicData = docSnap.data()[topic];
-                
-                // Знаходимо конкретний рівень у масиві doors
-                // (У Firebase це масив, ми шукаємо по ID)
-                let levelData = null;
-                if (topicData.doors && Array.isArray(topicData.doors)) {
-                    levelData = topicData.doors.find(d => d.id == levelNum);
-                }
-
-                if (levelData) {
-                    qInput.value = levelData.question || "";
-                    cInput.value = levelData.answer || "";
-                    wInputs.forEach((inp, i) => { 
-                        inp.value = (levelData.wrongAnswers && levelData.wrongAnswers[i]) ? levelData.wrongAnswers[i] : ""; 
-                    });
-                    imageState.questionImageUrl = levelData.questionImageUrl || "";
-                    imageState.answerImageUrl = levelData.answerImageUrl || "";
-                    imageState.wrongAnswerImageUrls = Array.isArray(levelData.wrongAnswerImageUrls)
-                        ? [...levelData.wrongAnswerImageUrls, "", "", "", ""].slice(0, 4)
-                        : ["", "", "", ""];
-
-                    setImagePreview(questionImagePreview, imageState.questionImageUrl, "Фото завдання не вибрано");
-                    setImagePreview(correctImagePreview, imageState.answerImageUrl, "Фото правильної відповіді не вибрано");
-                    wrongImagePreviewEls.forEach((el, idx) => {
-                        setImagePreview(el, imageState.wrongAnswerImageUrls[idx] || "", `Фото для ключа-пастки ${idx + 1} не вибрано`);
-                    });
-                    if (questionImageInput) questionImageInput.value = "";
-                    if (correctImageInput) correctImageInput.value = "";
-                    wrongImageInputs.forEach((inp) => { inp.value = ""; });
-                    
-                    // 🔥 ВИПРАВЛЕННЯ: Беремо нагороду та час саме з ЦЬОГО рівня
-                    // Якщо в рівні немає, беремо дефолт 100/60
-                    goldInput.value = levelData.reward || 100;
-                    timeInput.value = levelData.timeLimit || 60;
-
-                    statusText.textContent = "✅ Завантажено!";
-                } else {
-                    // Якщо рівня ще немає — очищаємо поля
-                    qInput.value = "";
-                    cInput.value = "";
-                    wInputs.forEach(i => i.value = "");
-                    imageState.questionImageUrl = "";
-                    imageState.answerImageUrl = "";
-                    imageState.wrongAnswerImageUrls = ["", "", "", ""];
-                    setImagePreview(questionImagePreview, "", "Фото завдання не вибрано");
-                    setImagePreview(correctImagePreview, "", "Фото правильної відповіді не вибрано");
-                    wrongImagePreviewEls.forEach((el, idx) => {
-                        setImagePreview(el, "", `Фото для ключа-пастки ${idx + 1} не вибрано`);
-                    });
-                    if (questionImageInput) questionImageInput.value = "";
-                    if (correctImageInput) correctImageInput.value = "";
-                    wrongImageInputs.forEach((inp) => { inp.value = ""; });
-                    goldInput.value = "100";
-                    timeInput.value = "60";
-                    statusText.textContent = "ℹ️ Новий рівень.";
-                }
+                const levelData = findLevelFromTopicData(topicData, levelNum);
+                applyLevelDataToForm(levelData, "✅ Завантажено конфіг вчителя.");
             } else {
                 statusText.textContent = "ℹ️ Тема ще не створена.";
             }
@@ -784,7 +872,50 @@ function setupLevelEditorLogic() {
             console.error(e);
             statusText.textContent = "❌ Помилка."; 
         }
+    }
+
+    // ==========================================
+    // 📥 ЗАВАНТАЖЕННЯ (LOAD)
+    // ==========================================
+    btnLoad.onclick = async () => {
+        await loadSelectedLevelFromTeacherConfig();
     };
+
+    if (btnReset) {
+        btnReset.onclick = async () => {
+            const topic = document.getElementById("editor-topic").value;
+            const levelNum = parseInt(document.getElementById("editor-level").value, 10);
+            const ok = confirm(`Скинути кастом вчителя для рівня ${levelNum}?\nПісля цього у грі використовуватиметься global_configs_game_levels (базовий конфіг).`);
+            if (!ok) return;
+
+            try {
+                const teacherRef = doc(db, "teacher_configs", user.uid);
+                const teacherSnap = await getDoc(teacherRef);
+                if (teacherSnap.exists()) {
+                    const currentData = teacherSnap.data() || {};
+                    const topicData = currentData[topic] || {};
+                    const doors = Array.isArray(topicData.doors) ? [...topicData.doors] : [];
+                    const idx = Math.max(0, levelNum - 1);
+                    if (idx < doors.length) {
+                        doors[idx] = null;
+                        while (doors.length > 0 && !doors[doors.length - 1]) doors.pop();
+                        await setDoc(teacherRef, { [topic]: { doors } }, { merge: true });
+                    }
+                }
+
+                const globalTopicData = await loadGlobalTopicData(topic);
+                const globalLevelData = findLevelFromTopicData(globalTopicData, levelNum);
+                applyLevelDataToForm(globalLevelData, "↩️ Кастом вчителя скинуто. Завантажено базовий конфіг із global_configs_game_levels.");
+
+                formArea.style.opacity = "1";
+                formArea.style.pointerEvents = "auto";
+            } catch (e) {
+                console.error(e);
+                statusText.textContent = "❌ Не вдалося скинути рівень до global конфігу.";
+                alert("Помилка скидання: " + (e.message || e));
+            }
+        };
+    }
 
     // ==========================================
 // 💾 ЗБЕРЕЖЕННЯ (ОНОВЛЕНА ВЕРСІЯ)
@@ -862,13 +993,13 @@ btnSave.onclick = async () => {
                 return;
             }
             if (slot.imageUrl) {
-                let fallback = `Wrong ${slot.idx + 1}`;
-                if (fallback === finalAnswerText) fallback = `Wrong ${slot.idx + 1}!`;
+                let fallback = `__IMG_ONLY_WRONG_${slot.idx + 1}__`;
+                if (fallback === finalAnswerText) fallback = `__IMG_ONLY_WRONG_${slot.idx + 1}_ALT__`;
                 wrongs.push(fallback);
             }
         });
         if (wrongs.length === 0) {
-            wrongs.push("Wrong 1");
+            wrongs.push("__IMG_ONLY_WRONG_1__");
         }
 
         const docRef = doc(db, "teacher_configs", user.uid);
@@ -922,7 +1053,11 @@ btnSave.onclick = async () => {
     } catch (e) {
         console.error("Помилка Firebase:", e);
         statusText.textContent = "❌ Помилка: " + e.message;
-        alert("Помилка при збереженні. Перевірте консоль.");
+        if (String(e?.message || "").includes("Cloudinary не налаштовано")) {
+            alert("Налаштуйте Cloudinary: localStorage.cloudinaryCloudName та localStorage.cloudinaryUploadPreset, потім перезавантажте сторінку.");
+        } else {
+            alert("Помилка при збереженні. Перевірте консоль.");
+        }
     }
 };
 }
