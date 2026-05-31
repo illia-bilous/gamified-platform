@@ -39,6 +39,15 @@ function resolveTopicKeyForProgress(userData, topicRaw) {
     return canon;
 }
 
+function formatDiaryMistakes(session) {
+    if (session?.tabSwitchForfeit) return "Спроба списати";
+    const mistakes = Number(session?.mistakes ?? 0);
+    const grade = Number(session?.grade ?? 0);
+    const score = Number(session?.score ?? 0);
+    if (mistakes >= 99 && grade <= 2 && score <= 0) return "Спроба списати";
+    return String(session?.mistakes ?? 0);
+}
+
 // Глобальні змінні стану
 let leaderboardUnsubscribe = null;
 let diaryUnsubscribe = null; 
@@ -46,6 +55,7 @@ let goldTrackerUnsubscribe = null;
 let cachedShopItems = null;
 let isProcessingReward = false; 
 let shopUnsubscribe = null;
+let studentDiaryMode = "all";
 
 /** Анти-чит: здача рівня при зникненні вкладки (мобільні / перемикання додатків) */
 let tabSwitchHideTimer = null;
@@ -498,6 +508,19 @@ window.addEventListener("message", (event) => {
                     [`progress.${topicKey}.examUnlockDay`]: unlockDay
                 });
                 console.log(`🚫 Забіг: тему «${topicKey}» заблоковано до ${unlockDay}`);
+
+                // Додатково: логування програшу в журнал / щоденник
+                const lossResult = {
+                    topic: topicRaw,
+                    level: payload.level || 1,
+                    timeSpent: payload.timeSpent || 0,
+                    mistakes: payload.mistakes || 0,
+                    grade: payload.grade || 2,
+                    score: payload.score || 0,
+                    win: false,
+                    gameMode: "exam"
+                };
+                void saveGameResult(lossResult, user);
             } catch (e) {
                 console.error("EXAM_LEVEL_FAILED:", e);
             }
@@ -790,26 +813,67 @@ export function renderStudentDiary(currentUser) {
     const tbody = document.getElementById("student-journal-tbody");
     if (!tbody) return;
 
+    const tableEl = tbody.closest("table");
+    if (tableEl && !document.getElementById("student-journal-mode-controls")) {
+        const controls = document.createElement("div");
+        controls.id = "student-journal-mode-controls";
+        controls.style.cssText = "display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin: 0 0 10px 0;";
+        tableEl.parentNode.insertBefore(controls, tableEl);
+    }
+
     if (diaryUnsubscribe) diaryUnsubscribe();
 
     const q = query(collection(db, "users", currentUser.uid, "game_sessions"), orderBy("timestamp", "desc"), limit(50));
 
     diaryUnsubscribe = onSnapshot(q, (snapshot) => {
+        const controls = document.getElementById("student-journal-mode-controls");
+        const modes = [
+            { id: "all", label: "Усі" },
+            { id: "training", label: "Тренування" },
+            { id: "exam", label: "Забіг" }
+        ];
+        if (controls) {
+            controls.innerHTML = modes.map((m) => {
+                const active = studentDiaryMode === m.id;
+                return `<button class="student-diary-mode-btn" data-mode="${m.id}" style="padding:6px 12px; border-radius:8px; border:1px solid ${active ? "#1abc9c" : "#555"}; background:${active ? "rgba(26,188,156,0.2)" : "#2a2a2a"}; color:${active ? "#d7fff7" : "#ddd"}; cursor:pointer; font-weight:700;">${m.label}</button>`;
+            }).join("");
+            controls.querySelectorAll(".student-diary-mode-btn").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    studentDiaryMode = btn.getAttribute("data-mode");
+                    renderStudentDiary(currentUser);
+                });
+            });
+        }
+
         if (snapshot.empty) {
             tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color:#777;">Історія порожня.</td></tr>`;
             return;
         }
-        tbody.innerHTML = snapshot.docs.map(docSnap => {
-            const d = docSnap.data();
+
+        const sessions = snapshot.docs.map((docSnap) => docSnap.data());
+        const filteredSessions = studentDiaryMode === "all"
+            ? sessions
+            : sessions.filter((d) => {
+                const mode = String(d.gameMode || "").toLowerCase().trim() === "training" ? "training" : "exam";
+                return mode === studentDiaryMode;
+            });
+
+        if (filteredSessions.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color:#777;">Немає записів для цього фільтра.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filteredSessions.map((d) => {
             const date = d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleString('uk-UA', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "--";
             let gColor = d.grade >= 10 ? "#2ecc71" : (d.grade >= 7 ? "#f1c40f" : "#e74c3c");
+            const mistakesText = formatDiaryMistakes(d);
             
             return `
                 <tr style="border-bottom: 1px solid #333;">
                     <td style="padding: 12px; color: #ccc;">${date}</td>
                     <td style="text-align: center; color: white;">${d.level} (${d.topic})</td>
                     <td style="text-align: center;">${d.timeSpent}с</td>
-                    <td style="text-align: center;">${d.mistakes}</td>
+                    <td style="text-align: center;">${mistakesText}</td>
                     <td style="text-align: center; color: #f1c40f;">+${d.score} 💰</td>
                     <td style="text-align: center;"><span style="color:${gColor}; font-weight:bold;">${d.grade}</span></td>
                 </tr>`;
